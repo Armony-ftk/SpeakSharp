@@ -19,18 +19,30 @@ export default function AuthTextField({
   style,
 }) {
   const [isSecure, setIsSecure] = useState(!!secureTextEntry);
+  const [isFocused, setIsFocused] = useState(false);
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
 
   return (
     <View style={[styles.container, style]}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
-      <View style={[styles.inputWrapper, multiline && styles.inputWrapperMultiline]}>
+      <View
+        style={[
+          styles.inputWrapper,
+          multiline && styles.inputWrapperMultiline,
+          isFocused && styles.inputWrapperFocused,
+        ]}
+      >
         {icon ? (
-          <Ionicons name={icon} size={18} color={colors.placeholder} style={styles.icon} />
+          <Ionicons
+            name={icon}
+            size={18}
+            color={isFocused ? colors.accent : colors.placeholder}
+            style={styles.icon}
+          />
         ) : null}
         <TextInput
-          style={[styles.input, multiline && styles.inputMultiline]}
+          style={[styles.input, multiline && styles.inputMultiline, styles.noNativeOutline]}
           placeholder={placeholder}
           placeholderTextColor={colors.placeholder}
           value={value}
@@ -41,6 +53,8 @@ export default function AuthTextField({
           multiline={multiline}
           numberOfLines={numberOfLines}
           textAlignVertical={multiline ? 'top' : 'center'}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
         />
         {secureTextEntry ? (
           <TouchableOpacity onPress={() => setIsSecure((prev) => !prev)} hitSlop={8}>
@@ -59,45 +73,52 @@ export default function AuthTextField({
 
 function getStyles(colors, typography) {
   return StyleSheet.create({
-  container: {
-    marginBottom: spacing.md,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.navySoft,
-    marginBottom: spacing.xs,
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.inputBackground,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.sm,
-  },
-  inputWrapperMultiline: {
-    alignItems: 'flex-start',
-    paddingVertical: spacing.xs,
-  },
-  icon: {
-    marginRight: spacing.sm,
-  },
-  input: {
-    flex: 1,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
-  inputMultiline: {
-    minHeight: 80,
-    paddingTop: spacing.xs,
-  },
-  helperText: {
-    ...typography.body,
-    fontSize: 12,
-    marginTop: spacing.xs,
-  },
+    container: {
+      marginBottom: spacing.md,
+    },
+    label: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.navySoft,
+      marginBottom: spacing.xs,
+    },
+    inputWrapper: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.inputBackground,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: spacing.sm,
+    },
+    inputWrapperFocused: {
+      borderColor: colors.accent,
+      borderWidth: 1.5,
+    },
+    inputWrapperMultiline: {
+      alignItems: 'flex-start',
+      paddingVertical: spacing.xs,
+    },
+    icon: {
+      marginRight: spacing.sm,
+    },
+    input: {
+      flex: 1,
+      paddingVertical: 12,
+      fontSize: 15,
+      color: colors.textPrimary,
+    },
+    noNativeOutline: {
+      outlineStyle: 'none',
+    },
+    inputMultiline: {
+      minHeight: 80,
+      paddingTop: spacing.xs,
+    },
+    helperText: {
+      ...typography.body,
+      fontSize: 12,
+      marginTop: spacing.xs,
+    },
   });
 }

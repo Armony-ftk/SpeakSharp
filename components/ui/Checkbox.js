@@ -10,7 +10,7 @@ export default function Checkbox({ checked, onToggle, children }) {
   return (
     <TouchableOpacity style={styles.row} onPress={onToggle} activeOpacity={0.7}>
       <View style={[styles.box, checked && styles.boxChecked]}>
-        {checked ? <Ionicons name="checkmark" size={13} color={colors.card} /> : null}
+        {checked ? <Ionicons name="checkmark" size={13} color="#FFFFFF" /> : null}
       </View>
       <View style={styles.textContainer}>{children}</View>
     </TouchableOpacity>
@@ -36,8 +36,8 @@ function getStyles(colors) {
     marginTop: 2,
   },
   boxChecked: {
-    backgroundColor: colors.navy,
-    borderColor: colors.navy,
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   textContainer: {
     flex: 1,

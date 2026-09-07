@@ -24,7 +24,7 @@ function getStyles(colors) {
   fill: {
     height: '100%',
     borderRadius: radius.pill,
-    backgroundColor: colors.navy,
+    backgroundColor: colors.accent,
   },
   });
 }

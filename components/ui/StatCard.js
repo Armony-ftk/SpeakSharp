@@ -7,7 +7,7 @@ export default function StatCard({ value, label, valueColor, subtitle, subtitleC
   const styles = getStyles(colors);
 
   return (
-    <View style={styles.card}>
+    <View style={styles.stat}>
       <Text style={styles.label}>{label}</Text>
       <Text style={[styles.value, valueColor && { color: valueColor }]}>{value}</Text>
       {subtitle ? (
@@ -19,29 +19,34 @@ export default function StatCard({ value, label, valueColor, subtitle, subtitleC
 
 function getStyles(colors) {
   return StyleSheet.create({
-  card: {
-    flex: 1,
-    backgroundColor: colors.card,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-  },
-  value: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: colors.navy,
-    marginTop: 2,
-  },
-  label: {
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-  subtitle: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
+    stat: {
+      flex: 1,
+      alignItems: 'center',
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.cardBorder,
+      borderRadius: radius.md,
+      paddingVertical: spacing.md,
+      shadowColor: '#101828',
+      shadowOpacity: 0.05,
+      shadowOffset: { width: 0, height: 4 },
+      shadowRadius: 12,
+      elevation: 2,
+    },
+    value: {
+      fontSize: 24,
+      fontWeight: '700',
+      color: colors.navy,
+      marginTop: spacing.xs,
+    },
+    label: {
+      fontSize: 13,
+      color: colors.textSecondary,
+    },
+    subtitle: {
+      fontSize: 11,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
   });
 }

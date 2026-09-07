@@ -106,7 +106,7 @@ function getStyles(colors, typography) {
     color: colors.textSecondary,
   },
   confirmButton: {
-    backgroundColor: colors.navy,
+    backgroundColor: colors.accent,
     paddingVertical: 10,
     paddingHorizontal: spacing.md,
     borderRadius: radius.sm,
@@ -117,7 +117,7 @@ function getStyles(colors, typography) {
   confirmText: {
     fontSize: 14,
     fontWeight: '700',
-    color: colors.card,
+    color: '#FFFFFF',
   },
   });
 }

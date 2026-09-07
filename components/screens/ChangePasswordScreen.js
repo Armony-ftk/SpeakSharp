@@ -88,7 +88,7 @@ function getStyles(colors, typography) {
   },
   headerTitle: {
     ...typography.heading,
-    fontSize: 18,
+    fontSize: 20,
     marginLeft: spacing.sm,
   },
   error: {

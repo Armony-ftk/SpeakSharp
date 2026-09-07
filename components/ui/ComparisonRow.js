@@ -59,7 +59,7 @@ function getStyles(colors) {
     paddingHorizontal: spacing.sm,
   },
   pillActive: {
-    backgroundColor: colors.navy,
+    backgroundColor: colors.accent,
   },
   pillText: {
     fontSize: 12,
@@ -67,7 +67,7 @@ function getStyles(colors) {
     color: colors.textSecondary,
   },
   pillTextActive: {
-    color: colors.card,
+    color: '#FFFFFF',
   },
   });
 }

@@ -52,7 +52,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.sectionLabel}>YOUR STATS</Text>
+      <Text style={styles.sectionTitle}>Your Stats</Text>
       <ProfileStatCard
         icon="mic-outline"
         badgeLabel="Active"
@@ -66,7 +66,7 @@ export default function ProfileScreen() {
         value={stats.averageScore}
       />
 
-      <Text style={styles.sectionLabel}>CURRENT GOAL</Text>
+      <Text style={styles.sectionTitle}>Current Goal</Text>
       <View style={styles.goalCard}>
         <View style={styles.goalHeaderRow}>
           <View style={styles.goalIconWrap}>
@@ -97,19 +97,24 @@ function getStyles(colors, typography) {
     width: 88,
     height: 88,
     borderRadius: radius.pill,
-    backgroundColor: colors.navy,
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.sm,
+    shadowColor: '#101828',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 3,
   },
   avatarText: {
     fontSize: 28,
     fontWeight: '800',
-    color: colors.card,
+    color: '#FFFFFF',
   },
   name: {
     ...typography.heading,
-    fontSize: 18,
+    fontSize: 20,
   },
   memberSince: {
     fontSize: 13,
@@ -120,11 +125,17 @@ function getStyles(colors, typography) {
   editButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.cardBorder,
     borderRadius: radius.pill,
     paddingVertical: 8,
     paddingHorizontal: spacing.md,
+    shadowColor: '#101828',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 2,
   },
   editButtonText: {
     fontSize: 13,
@@ -132,20 +143,24 @@ function getStyles(colors, typography) {
     color: colors.navy,
     marginLeft: spacing.xs,
   },
-  sectionLabel: {
-    fontSize: 12,
+  sectionTitle: {
+    fontSize: 17,
     fontWeight: '700',
-    color: colors.textSecondary,
-    letterSpacing: 0.6,
-    marginBottom: spacing.sm,
+    color: colors.navy,
+    marginBottom: spacing.md,
     marginTop: spacing.sm,
   },
   goalCard: {
     backgroundColor: colors.card,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.cardBorder,
     padding: spacing.md,
+    shadowColor: '#101828',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 2,
   },
   goalHeaderRow: {
     flexDirection: 'row',

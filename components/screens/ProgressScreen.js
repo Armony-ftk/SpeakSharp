@@ -56,14 +56,14 @@ export default function ProgressScreen() {
         </View>
       </View>
 
-      <Text style={styles.sectionLabel}>YOUR IMPROVEMENT</Text>
+      <Text style={styles.sectionTitle}>Your Improvement</Text>
       {improvements.map((item) => (
         <ProgressMetricCard key={item.label} {...item} />
       ))}
 
       <View style={styles.keepGoingCard}>
         <View style={styles.keepGoingHeader}>
-          <Ionicons name="trophy" size={16} color={colors.card} />
+          <Ionicons name="trophy" size={16} color="#FFFFFF" />
           <Text style={styles.keepGoingTitle}>Keep Going</Text>
         </View>
         <Text style={styles.keepGoingText}>
@@ -78,33 +78,38 @@ function getStyles(colors, typography) {
   return StyleSheet.create({
   title: {
     ...typography.heading,
-    fontSize: 20,
+    fontSize: 24,
   },
   subtitle: {
     ...typography.body,
-    marginTop: spacing.xs,
+    fontSize: 15,
+    marginTop: spacing.sm,
     marginBottom: spacing.lg,
   },
   statsGrid: {
-    gap: spacing.sm,
+    gap: spacing.sm + 4,
     marginBottom: spacing.lg,
   },
   statsRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.sm + 4,
   },
-  sectionLabel: {
-    fontSize: 12,
+  sectionTitle: {
+    fontSize: 17,
     fontWeight: '700',
-    color: colors.textSecondary,
-    letterSpacing: 0.6,
-    marginBottom: spacing.sm,
+    color: colors.navy,
+    marginBottom: spacing.md,
   },
   keepGoingCard: {
-    backgroundColor: colors.navy,
+    backgroundColor: colors.accent,
     borderRadius: radius.md,
     padding: spacing.md,
     marginTop: spacing.sm,
+    shadowColor: '#101828',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 3,
   },
   keepGoingHeader: {
     flexDirection: 'row',
@@ -113,13 +118,13 @@ function getStyles(colors, typography) {
   keepGoingTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: colors.card,
+    color: '#FFFFFF',
     marginLeft: spacing.xs,
   },
   keepGoingText: {
     fontSize: 13,
-    color: colors.card,
-    opacity: 0.85,
+    color: '#FFFFFF',
+    opacity: 0.9,
     marginTop: spacing.xs,
   },
   emptyContent: {

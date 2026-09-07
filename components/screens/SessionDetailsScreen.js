@@ -89,7 +89,7 @@ export default function SessionDetailsScreen() {
 
       {hasAttempts ? (
         <>
-          <Text style={styles.sectionLabel}>YOUR IMPROVEMENT</Text>
+          <Text style={styles.sectionTitle}>Your Improvement</Text>
           <View style={styles.improvementCard}>
             <View style={styles.ratingRow}>
               <Text style={styles.ratingLabel}>Overall Rating Shift</Text>
@@ -129,7 +129,7 @@ export default function SessionDetailsScreen() {
             />
           )}
 
-          <Text style={styles.sectionLabel}>PREVIOUS ATTEMPTS</Text>
+          <Text style={styles.sectionTitle}>Previous Attempts</Text>
           {session.previousAttempts.map((attempt) => (
             <AttemptListItem
               key={attempt.number}
@@ -205,12 +205,13 @@ function getStyles(colors, typography) {
   },
   headerTitle: {
     ...typography.heading,
-    fontSize: 18,
+    fontSize: 20,
     flex: 1,
     marginHorizontal: spacing.sm,
   },
   headerSubtitle: {
     ...typography.body,
+    fontSize: 15,
     marginTop: spacing.xs,
     marginBottom: spacing.lg,
   },
@@ -236,23 +237,27 @@ function getStyles(colors, typography) {
   },
   statsRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.sm + 4,
     marginBottom: spacing.lg,
   },
-  sectionLabel: {
-    fontSize: 12,
+  sectionTitle: {
+    fontSize: 17,
     fontWeight: '700',
-    color: colors.textSecondary,
-    letterSpacing: 0.6,
-    marginBottom: spacing.sm,
+    color: colors.navy,
+    marginBottom: spacing.md,
   },
   improvementCard: {
     backgroundColor: colors.card,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.cardBorder,
     padding: spacing.md,
     marginBottom: spacing.lg,
+    shadowColor: '#101828',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 2,
   },
   ratingRow: {
     marginBottom: spacing.md,
@@ -275,7 +280,7 @@ function getStyles(colors, typography) {
     color: colors.navy,
   },
   ratingPill: {
-    backgroundColor: colors.navy,
+    backgroundColor: colors.accent,
     borderRadius: radius.pill,
     paddingVertical: 4,
     paddingHorizontal: spacing.sm,
@@ -283,7 +288,7 @@ function getStyles(colors, typography) {
   ratingPillText: {
     fontSize: 11,
     fontWeight: '700',
-    color: colors.card,
+    color: '#FFFFFF',
   },
   });
 }

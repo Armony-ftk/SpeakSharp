@@ -15,11 +15,11 @@ export default function PrimaryButton({ label, onPress, loading, style, icon, pi
       disabled={loading}
     >
       {loading ? (
-        <ActivityIndicator color={colors.card} />
+        <ActivityIndicator color="#FFFFFF" />
       ) : (
         <>
           {icon ? (
-            <Ionicons name={icon} size={16} color={colors.card} style={styles.icon} />
+            <Ionicons name={icon} size={16} color="#FFFFFF" style={styles.icon} />
           ) : null}
           <Text style={styles.label}>{label}</Text>
         </>
@@ -32,12 +32,17 @@ function getStyles(colors) {
   return StyleSheet.create({
   button: {
     flexDirection: 'row',
-    backgroundColor: colors.navy,
-    borderRadius: radius.sm,
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
     paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: spacing.sm,
+    shadowColor: '#101828',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 3,
   },
   buttonPill: {
     borderRadius: radius.pill,
@@ -46,7 +51,7 @@ function getStyles(colors) {
     marginRight: spacing.sm,
   },
   label: {
-    color: colors.card,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
     letterSpacing: 0.6,

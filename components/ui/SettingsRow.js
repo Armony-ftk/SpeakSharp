@@ -21,7 +21,7 @@ export default function SettingsRow({ icon, label, subtitle, onPress, value, onV
         <Switch
           value={value}
           onValueChange={onValueChange}
-          trackColor={{ true: colors.navy, false: colors.border }}
+          trackColor={{ true: colors.accent, false: colors.border }}
         />
       ) : (
         <Ionicons name="chevron-forward" size={18} color={colors.placeholder} />

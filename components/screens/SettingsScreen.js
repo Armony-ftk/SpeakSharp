@@ -3,6 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenContainer from '../ui/ScreenContainer';
+import AppHeader from '../ui/AppHeader';
 import SettingsRow from '../ui/SettingsRow';
 import { radius, spacing } from '../../constants/theme';
 import { useAppTheme } from '../../constants/ThemeContext';
@@ -16,15 +17,9 @@ export default function SettingsScreen() {
 
   return (
     <ScreenContainer>
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
-          <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>SpeakSharp</Text>
-        <View style={styles.headerSpacer} />
-      </View>
+      <AppHeader />
 
-      <Text style={styles.sectionLabel}>ACCOUNT</Text>
+      <Text style={styles.sectionTitle}>Account</Text>
       <View style={styles.card}>
         <SettingsRow
           icon="person-outline"
@@ -38,7 +33,7 @@ export default function SettingsScreen() {
         />
       </View>
 
-      <Text style={styles.sectionLabel}>PREFERENCES</Text>
+      <Text style={styles.sectionTitle}>Preferences</Text>
       <View style={styles.card}>
         <SettingsRow
           icon="moon-outline"
@@ -54,7 +49,7 @@ export default function SettingsScreen() {
         />
       </View>
 
-      <Text style={styles.sectionLabel}>PRACTICE</Text>
+      <Text style={styles.sectionTitle}>Practice</Text>
       <View style={styles.card}>
         <SettingsRow
           icon="cloud-offline-outline"
@@ -65,7 +60,7 @@ export default function SettingsScreen() {
         />
       </View>
 
-      <Text style={styles.sectionLabel}>SUPPORT</Text>
+      <Text style={styles.sectionTitle}>Support</Text>
       <View style={styles.card}>
         <SettingsRow icon="help-circle-outline" label="Help Center" onPress={() => {}} />
         <SettingsRow icon="document-text-outline" label="Terms of Service" onPress={() => {}} />
@@ -85,34 +80,25 @@ export default function SettingsScreen() {
 
 function getStyles(colors, typography) {
   return StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.lg,
-  },
-  headerTitle: {
-    ...typography.heading,
+  sectionTitle: {
     fontSize: 17,
-  },
-  headerSpacer: {
-    width: 20,
-  },
-  sectionLabel: {
-    fontSize: 12,
     fontWeight: '700',
-    color: colors.textSecondary,
-    letterSpacing: 0.6,
-    marginBottom: spacing.sm,
+    color: colors.navy,
+    marginBottom: spacing.md,
     marginTop: spacing.sm,
   },
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.cardBorder,
     paddingHorizontal: spacing.md,
     marginBottom: spacing.lg,
+    shadowColor: '#101828',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 2,
   },
   signOutButton: {
     flexDirection: 'row',

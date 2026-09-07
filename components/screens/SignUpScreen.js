@@ -47,7 +47,7 @@ export default function SignUpScreen() {
 
       <AuthTextField
         label="Full Name"
-        placeholder="Jane Doe"
+        placeholder="Aubrey Drake Graham"
         icon="person-outline"
         value={fullName}
         onChangeText={setFullName}
@@ -55,7 +55,7 @@ export default function SignUpScreen() {
       />
       <AuthTextField
         label="Email Address"
-        placeholder="jane@example.com"
+        placeholder="drizzy@ovo.com"
         icon="mail-outline"
         value={email}
         onChangeText={setEmail}

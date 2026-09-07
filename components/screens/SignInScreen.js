@@ -82,30 +82,38 @@ export default function SignInScreen() {
 
 function getStyles(colors, typography) {
   return StyleSheet.create({
-  subtitle: {
-    ...typography.body,
-    marginTop: spacing.xs,
-    marginBottom: spacing.lg,
-  },
-  forgotLink: {
-    alignSelf: 'flex-end',
-    color: colors.accent,
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: spacing.md,
-  },
-  footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: spacing.lg,
-  },
-  footerText: {
-    ...typography.body,
-  },
-  footerLink: {
-    color: colors.accent,
-    fontSize: 14,
-    fontWeight: '700',
-  },
+    subtitle: {
+      ...typography.body,
+      lineHeight: 20,
+      letterSpacing: 0.1,
+      marginTop: spacing.xs,
+      marginBottom: spacing.lg * 1.5,
+    },
+    forgotLink: {
+      alignSelf: 'flex-end',
+      color: colors.accent,
+      fontSize: 13,
+      fontWeight: '600',
+      letterSpacing: 0.1,
+      paddingVertical: 4,
+      marginTop: -spacing.xs,
+      marginBottom: spacing.md,
+    },
+    footerRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginTop: spacing.lg * 1.5,
+    },
+    footerText: {
+      ...typography.body,
+      fontSize: 14,
+    },
+    footerLink: {
+      color: colors.accent,
+      fontSize: 14,
+      fontWeight: '700',
+      letterSpacing: 0.1,
+    },
   });
 }

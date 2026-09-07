@@ -9,8 +9,7 @@ export default function BrandTitle({ style }) {
   return (
     <View style={[styles.row, style]}>
       <View style={styles.iconWrap}>
-        <Ionicons name="mic" size={26} color={colors.navy} />
-        <Ionicons name="trending-up" size={16} color={colors.accent} style={styles.arrow} />
+        <Ionicons name="mic" size={20} color="#FFFFFF" />
       </View>
       <Text style={styles.title}>SpeakSharp</Text>
     </View>
@@ -24,16 +23,13 @@ function getStyles(colors, typography) {
     alignItems: 'center',
   },
   iconWrap: {
-    width: 32,
-    height: 30,
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    backgroundColor: colors.accent,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 6,
-  },
-  arrow: {
-    position: 'absolute',
-    top: -6,
-    right: -8,
+    marginRight: 10,
   },
   title: {
     ...typography.brand,
