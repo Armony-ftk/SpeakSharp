@@ -1,6 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useAppTheme } from '../../constants/ThemeContext';
+import { StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useAppTheme } from "../../constants/ThemeContext";
 
 export default function BrandTitle({ style }) {
   const { colors, typography } = useAppTheme();
@@ -18,21 +18,21 @@ export default function BrandTitle({ style }) {
 
 function getStyles(colors, typography) {
   return StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  iconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
-    backgroundColor: colors.accent,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  title: {
-    ...typography.brand,
-  },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    iconWrap: {
+      width: 38,
+      height: 38,
+      borderRadius: 11,
+      backgroundColor: colors.accent,
+      justifyContent: "center",
+      alignItems: "center",
+      marginRight: 10,
+    },
+    title: {
+      ...typography.brand,
+    },
   });
 }

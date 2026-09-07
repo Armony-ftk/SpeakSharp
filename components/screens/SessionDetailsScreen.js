@@ -1,18 +1,22 @@
-import { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import ScreenContainer from '../ui/ScreenContainer';
-import StatCard from '../ui/StatCard';
-import ComparisonRow from '../ui/ComparisonRow';
-import PrimaryButton from '../ui/PrimaryButton';
-import AttemptListItem from '../ui/AttemptListItem';
-import EmptyState from '../ui/EmptyState';
-import ActionSheet from '../ui/ActionSheet';
-import ConfirmDialog from '../ui/ConfirmDialog';
-import { getSession, updateSession, deleteSession } from '../../constants/mockSessions';
-import { radius, spacing } from '../../constants/theme';
-import { useAppTheme } from '../../constants/ThemeContext';
+import { useState } from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import ScreenContainer from "../ui/ScreenContainer";
+import StatCard from "../ui/StatCard";
+import ComparisonRow from "../ui/ComparisonRow";
+import PrimaryButton from "../ui/PrimaryButton";
+import AttemptListItem from "../ui/AttemptListItem";
+import EmptyState from "../ui/EmptyState";
+import ActionSheet from "../ui/ActionSheet";
+import ConfirmDialog from "../ui/ConfirmDialog";
+import {
+  getSession,
+  updateSession,
+  deleteSession,
+} from "../../constants/mockSessions";
+import { radius, spacing } from "../../constants/theme";
+import { useAppTheme } from "../../constants/ThemeContext";
 
 export default function SessionDetailsScreen() {
   const { id } = useLocalSearchParams();
@@ -24,17 +28,17 @@ export default function SessionDetailsScreen() {
   const styles = getStyles(colors, typography);
 
   const hasAttempts = session.attempts > 0;
-  const isCompleted = session.status === 'Completed';
+  const isCompleted = session.status === "Completed";
 
   const handleMarkComplete = () => {
-    setSession(updateSession(id, { status: 'Completed' }));
+    setSession(updateSession(id, { status: "Completed" }));
     setShowMarkComplete(false);
   };
 
   const handleDeleteSession = () => {
     deleteSession(id);
     setShowDeleteSession(false);
-    router.replace('/sessions');
+    router.replace("/sessions");
   };
 
   return (
@@ -47,7 +51,11 @@ export default function SessionDetailsScreen() {
           {session.title}
         </Text>
         <TouchableOpacity onPress={() => setShowMenu(true)} hitSlop={8}>
-          <Ionicons name="ellipsis-vertical" size={20} color={colors.textPrimary} />
+          <Ionicons
+            name="ellipsis-vertical"
+            size={20}
+            color={colors.textPrimary}
+          />
         </TouchableOpacity>
       </View>
 
@@ -58,29 +66,44 @@ export default function SessionDetailsScreen() {
         </View>
       ) : (
         <Text style={styles.headerSubtitle}>
-          {session.status} • {session.date} • Target: {session.targetMinutes} min
+          {session.status} • {session.date} • Target: {session.targetMinutes}{" "}
+          min
         </Text>
       )}
 
       {isCompleted ? (
         <View style={styles.completedStats}>
           <Text style={styles.completedStatLine}>
-            Final rating {session.latestScore != null ? session.latestScore.toFixed(1) : '--'} / 10
+            Final rating{" "}
+            {session.latestScore != null
+              ? session.latestScore.toFixed(1)
+              : "--"}{" "}
+            / 10
           </Text>
           <Text style={styles.completedStatLine}>
-            Best rating {session.bestScore != null ? session.bestScore.toFixed(1) : '--'} / 10
+            Best rating{" "}
+            {session.bestScore != null ? session.bestScore.toFixed(1) : "--"} /
+            10
           </Text>
-          <Text style={styles.completedStatLine}>Attempts {session.attempts}</Text>
+          <Text style={styles.completedStatLine}>
+            Attempts {session.attempts}
+          </Text>
         </View>
       ) : (
         <View style={styles.statsRow}>
           <StatCard value={session.attempts} label="Attempts" />
           <StatCard
-            value={session.latestScore != null ? session.latestScore.toFixed(1) : '--'}
+            value={
+              session.latestScore != null
+                ? session.latestScore.toFixed(1)
+                : "--"
+            }
             label="Latest Score"
           />
           <StatCard
-            value={session.bestScore != null ? session.bestScore.toFixed(1) : '--'}
+            value={
+              session.bestScore != null ? session.bestScore.toFixed(1) : "--"
+            }
             label="Best Score"
             valueColor={colors.success}
           />
@@ -95,10 +118,13 @@ export default function SessionDetailsScreen() {
               <Text style={styles.ratingLabel}>Overall Rating Shift</Text>
               <View style={styles.ratingValueRow}>
                 <Text style={styles.ratingValue}>
-                  {session.ratingFrom.toFixed(1)} → {session.ratingTo.toFixed(1)}
+                  {session.ratingFrom.toFixed(1)} →{" "}
+                  {session.ratingTo.toFixed(1)}
                 </Text>
                 <View style={styles.ratingPill}>
-                  <Text style={styles.ratingPillText}>{session.ratingDelta}</Text>
+                  <Text style={styles.ratingPillText}>
+                    {session.ratingDelta}
+                  </Text>
                 </View>
               </View>
             </View>
@@ -118,7 +144,9 @@ export default function SessionDetailsScreen() {
             <PrimaryButton
               label="VIEW FINAL FEEDBACK"
               pill
-              onPress={() => router.push(`/session/${id}/attempt?view=feedback`)}
+              onPress={() =>
+                router.push(`/session/${id}/attempt?view=feedback`)
+              }
             />
           ) : (
             <PrimaryButton
@@ -158,15 +186,15 @@ export default function SessionDetailsScreen() {
           ...(!isCompleted
             ? [
                 {
-                  label: 'Mark as completed',
-                  icon: 'checkmark-circle-outline',
+                  label: "Mark as completed",
+                  icon: "checkmark-circle-outline",
                   onPress: () => setShowMarkComplete(true),
                 },
               ]
             : []),
           {
-            label: 'Delete session',
-            icon: 'trash-outline',
+            label: "Delete session",
+            icon: "trash-outline",
             destructive: true,
             onPress: () => setShowDeleteSession(true),
           },
@@ -186,7 +214,13 @@ export default function SessionDetailsScreen() {
         visible={showDeleteSession}
         title="Delete Practice Session?"
         message={`"${session.title}"\n\nThis will permanently delete:`}
-        items={[`${session.attempts} recording attempts`, 'Transcripts', 'Speaking metrics', 'AI feedback', 'Ratings']}
+        items={[
+          `${session.attempts} recording attempts`,
+          "Transcripts",
+          "Speaking metrics",
+          "AI feedback",
+          "Ratings",
+        ]}
         confirmLabel="DELETE SESSION"
         destructive
         onCancel={() => setShowDeleteSession(false)}
@@ -198,97 +232,97 @@ export default function SessionDetailsScreen() {
 
 function getStyles(colors, typography) {
   return StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-  },
-  headerTitle: {
-    ...typography.heading,
-    fontSize: 20,
-    flex: 1,
-    marginHorizontal: spacing.sm,
-  },
-  headerSubtitle: {
-    ...typography.body,
-    fontSize: 15,
-    marginTop: spacing.xs,
-    marginBottom: spacing.lg,
-  },
-  completedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: spacing.xs,
-    marginBottom: spacing.md,
-  },
-  completedText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.success,
-    marginLeft: spacing.xs,
-  },
-  completedStats: {
-    marginBottom: spacing.lg,
-  },
-  completedStatLine: {
-    ...typography.body,
-    color: colors.navySoft,
-    marginBottom: 2,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm + 4,
-    marginBottom: spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: colors.navy,
-    marginBottom: spacing.md,
-  },
-  improvementCard: {
-    backgroundColor: colors.card,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    shadowColor: '#101828',
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-    elevation: 2,
-  },
-  ratingRow: {
-    marginBottom: spacing.md,
-  },
-  ratingLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.navySoft,
-    marginBottom: spacing.xs,
-  },
-  ratingValueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  ratingValue: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: colors.navy,
-  },
-  ratingPill: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.pill,
-    paddingVertical: 4,
-    paddingHorizontal: spacing.sm,
-  },
-  ratingPillText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+    },
+    headerTitle: {
+      ...typography.heading,
+      fontSize: 20,
+      flex: 1,
+      marginHorizontal: spacing.sm,
+    },
+    headerSubtitle: {
+      ...typography.body,
+      fontSize: 15,
+      marginTop: spacing.xs,
+      marginBottom: spacing.lg,
+    },
+    completedRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: spacing.xs,
+      marginBottom: spacing.md,
+    },
+    completedText: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: colors.success,
+      marginLeft: spacing.xs,
+    },
+    completedStats: {
+      marginBottom: spacing.lg,
+    },
+    completedStatLine: {
+      ...typography.body,
+      color: colors.navySoft,
+      marginBottom: 2,
+    },
+    statsRow: {
+      flexDirection: "row",
+      gap: spacing.sm + 4,
+      marginBottom: spacing.lg,
+    },
+    sectionTitle: {
+      fontSize: 17,
+      fontWeight: "700",
+      color: colors.navy,
+      marginBottom: spacing.md,
+    },
+    improvementCard: {
+      backgroundColor: colors.card,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.cardBorder,
+      padding: spacing.md,
+      marginBottom: spacing.lg,
+      shadowColor: "#101828",
+      shadowOpacity: 0.05,
+      shadowOffset: { width: 0, height: 4 },
+      shadowRadius: 12,
+      elevation: 2,
+    },
+    ratingRow: {
+      marginBottom: spacing.md,
+    },
+    ratingLabel: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: colors.navySoft,
+      marginBottom: spacing.xs,
+    },
+    ratingValueRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: spacing.sm,
+    },
+    ratingValue: {
+      fontSize: 20,
+      fontWeight: "800",
+      color: colors.navy,
+    },
+    ratingPill: {
+      backgroundColor: colors.accent,
+      borderRadius: radius.pill,
+      paddingVertical: 4,
+      paddingHorizontal: spacing.sm,
+    },
+    ratingPillText: {
+      fontSize: 11,
+      fontWeight: "700",
+      color: "#FFFFFF",
+    },
   });
 }

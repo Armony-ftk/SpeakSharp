@@ -1,7 +1,7 @@
-import { StyleSheet, Text, TouchableOpacity } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
-import { radius, spacing } from '../../constants/theme';
-import { useAppTheme } from '../../constants/ThemeContext';
+import { StyleSheet, Text, TouchableOpacity } from "react-native";
+import Svg, { Path } from "react-native-svg";
+import { radius, spacing } from "../../constants/theme";
+import { useAppTheme } from "../../constants/ThemeContext";
 
 function GoogleGlyph({ size = 18 }) {
   return (
@@ -26,12 +26,19 @@ function GoogleGlyph({ size = 18 }) {
   );
 }
 
-export default function GoogleButton({ onPress, label = 'Sign in with Google' }) {
+export default function GoogleButton({
+  onPress,
+  label = "Sign in with Google",
+}) {
   const { colors } = useAppTheme();
   const styles = getStyles(colors);
 
   return (
-    <TouchableOpacity style={styles.button} onPress={onPress} activeOpacity={0.8}>
+    <TouchableOpacity
+      style={styles.button}
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
       <GoogleGlyph />
       <Text style={styles.label}>{label}</Text>
     </TouchableOpacity>
@@ -40,26 +47,26 @@ export default function GoogleButton({ onPress, label = 'Sign in with Google' })
 
 function getStyles(colors) {
   return StyleSheet.create({
-  button: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: radius.pill,
-    paddingVertical: 13,
-    backgroundColor: colors.card,
-    shadowColor: '#101828',
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-    elevation: 2,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginLeft: spacing.sm,
-  },
+    button: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: colors.cardBorder,
+      borderRadius: radius.pill,
+      paddingVertical: 13,
+      backgroundColor: colors.card,
+      shadowColor: "#101828",
+      shadowOpacity: 0.05,
+      shadowOffset: { width: 0, height: 4 },
+      shadowRadius: 12,
+      elevation: 2,
+    },
+    label: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.textPrimary,
+      marginLeft: spacing.sm,
+    },
   });
 }
