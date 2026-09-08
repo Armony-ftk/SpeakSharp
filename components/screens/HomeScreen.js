@@ -1,10 +1,12 @@
+import { useCallback, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import ScreenContainer from "../ui/ScreenContainer";
 import AppHeader from "../ui/AppHeader";
 import LogoMark from "../ui/LogoMark";
 import PrimaryButton from "../ui/PrimaryButton";
+import { getProfile } from "../../constants/mockProfile";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
 
@@ -32,8 +34,9 @@ const emptySessions = [];
 
 function getGreeting() {
   const hour = new Date().getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 14) return "Good day";
+  if (hour >= 14 && hour < 18) return "Good afternoon";
   return "Good evening";
 }
 
@@ -75,6 +78,16 @@ export default function HomeScreen() {
   const nextAction = getNextBestAction(sessions);
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
+  const [profile, setProfile] = useState(() => getProfile());
+
+  // Refresh from the mock store whenever this screen regains focus (e.g. after editing).
+  useFocusEffect(
+    useCallback(() => {
+      setProfile({ ...getProfile() });
+    }, []),
+  );
+
+  const firstName = profile.name.trim().split(" ")[0];
 
   if (sessions.length === 0) {
     return (
@@ -124,7 +137,9 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <Text style={styles.greeting}>{getGreeting()} 👋</Text>
+      <Text style={styles.greeting}>
+        {getGreeting()}, {firstName}
+      </Text>
       <Text style={styles.subtitle}>
         Ready to improve your next presentation?
       </Text>
@@ -370,9 +385,8 @@ function getStyles(colors, typography) {
       marginTop: spacing.xs,
     },
     sessionFooter: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
+      alignItems: "flex-start",
+      gap: spacing.sm,
       marginTop: spacing.smd,
     },
     sessionScore: {
