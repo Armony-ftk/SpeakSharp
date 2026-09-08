@@ -1,13 +1,13 @@
-import { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import ScreenContainer from '../ui/ScreenContainer';
-import AuthTextField from '../ui/AuthTextField';
-import PrimaryButton from '../ui/PrimaryButton';
-import { getProfile, updateProfile } from '../../constants/mockProfile';
-import { spacing } from '../../constants/theme';
-import { useAppTheme } from '../../constants/ThemeContext';
+import { useState } from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import ScreenContainer from "../ui/ScreenContainer";
+import AuthTextField from "../ui/AuthTextField";
+import PrimaryButton from "../ui/PrimaryButton";
+import { getProfile, updateProfile } from "../../constants/mockProfile";
+import { spacing } from "../../constants/theme";
+import { useAppTheme } from "../../constants/ThemeContext";
 
 export default function EditProfileScreen() {
   const [name, setName] = useState(() => getProfile().name);
@@ -45,15 +45,15 @@ export default function EditProfileScreen() {
 
 function getStyles(colors, typography) {
   return StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  headerTitle: {
-    ...typography.heading,
-    fontSize: 18,
-    marginLeft: spacing.sm,
-  },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: spacing.lg,
+    },
+    headerTitle: {
+      ...typography.heading,
+      fontSize: 20,
+      marginLeft: spacing.sm,
+    },
   });
 }

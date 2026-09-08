@@ -1,10 +1,17 @@
-import { StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { radius, spacing } from '../../constants/theme';
-import { useAppTheme } from '../../constants/ThemeContext';
+import { StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { radius, spacing } from "../../constants/theme";
+import { useAppTheme } from "../../constants/ThemeContext";
 
-export default function SettingsRow({ icon, label, subtitle, onPress, value, onValueChange }) {
-  const isSwitch = typeof value === 'boolean';
+export default function SettingsRow({
+  icon,
+  label,
+  subtitle,
+  onPress,
+  value,
+  onValueChange,
+}) {
+  const isSwitch = typeof value === "boolean";
   const { colors } = useAppTheme();
   const styles = getStyles(colors);
 
@@ -21,7 +28,7 @@ export default function SettingsRow({ icon, label, subtitle, onPress, value, onV
         <Switch
           value={value}
           onValueChange={onValueChange}
-          trackColor={{ true: colors.navy, false: colors.border }}
+          trackColor={{ true: colors.accent, false: colors.border }}
         />
       ) : (
         <Ionicons name="chevron-forward" size={18} color={colors.placeholder} />
@@ -42,34 +49,34 @@ export default function SettingsRow({ icon, label, subtitle, onPress, value, onV
 
 function getStyles(colors) {
   return StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  iconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.pill,
-    backgroundColor: colors.inputBackground,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.sm,
-  },
-  textWrap: {
-    flex: 1,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.navy,
-  },
-  subtitle: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: 1,
-  },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: spacing.sm,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    iconWrap: {
+      width: 32,
+      height: 32,
+      borderRadius: radius.pill,
+      backgroundColor: colors.inputBackground,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: spacing.sm,
+    },
+    textWrap: {
+      flex: 1,
+    },
+    label: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.navy,
+    },
+    subtitle: {
+      fontSize: 11,
+      color: colors.textSecondary,
+      marginTop: 1,
+    },
   });
 }

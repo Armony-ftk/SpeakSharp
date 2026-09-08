@@ -1,9 +1,14 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { spacing } from '../../constants/theme';
-import { useAppTheme } from '../../constants/ThemeContext';
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { spacing } from "../../constants/theme";
+import { useAppTheme } from "../../constants/ThemeContext";
 
-export default function SessionListItem({ title, attempts, latestScore, onPress }) {
+export default function SessionListItem({
+  title,
+  attempts,
+  latestScore,
+  onPress,
+}) {
   const { colors } = useAppTheme();
   const styles = getStyles(colors);
 
@@ -22,30 +27,35 @@ export default function SessionListItem({ title, attempts, latestScore, onPress 
 
 function getStyles(colors) {
   return StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    marginTop: spacing.sm,
-  },
-  textWrap: {
-    flexShrink: 1,
-  },
-  title: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.navy,
-  },
-  meta: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      backgroundColor: colors.card,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.cardBorder,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.md,
+      marginTop: spacing.sm,
+      shadowColor: "#101828",
+      shadowOpacity: 0.05,
+      shadowOffset: { width: 0, height: 4 },
+      shadowRadius: 12,
+      elevation: 2,
+    },
+    textWrap: {
+      flexShrink: 1,
+    },
+    title: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: colors.navy,
+    },
+    meta: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
   });
 }

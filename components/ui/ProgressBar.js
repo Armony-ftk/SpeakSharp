@@ -1,6 +1,6 @@
-import { StyleSheet, View } from 'react-native';
-import { radius } from '../../constants/theme';
-import { useAppTheme } from '../../constants/ThemeContext';
+import { StyleSheet, View } from "react-native";
+import { radius } from "../../constants/theme";
+import { useAppTheme } from "../../constants/ThemeContext";
 
 export default function ProgressBar({ progress = 0 }) {
   const { colors } = useAppTheme();
@@ -15,16 +15,16 @@ export default function ProgressBar({ progress = 0 }) {
 
 function getStyles(colors) {
   return StyleSheet.create({
-  track: {
-    height: 8,
-    borderRadius: radius.pill,
-    backgroundColor: colors.inputBackground,
-    overflow: 'hidden',
-  },
-  fill: {
-    height: '100%',
-    borderRadius: radius.pill,
-    backgroundColor: colors.navy,
-  },
+    track: {
+      height: 8,
+      borderRadius: radius.pill,
+      backgroundColor: colors.inputBackground,
+      overflow: "hidden",
+    },
+    fill: {
+      height: "100%",
+      borderRadius: radius.pill,
+      backgroundColor: colors.accent,
+    },
   });
 }

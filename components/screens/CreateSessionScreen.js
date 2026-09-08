@@ -1,19 +1,23 @@
-import { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import ScreenContainer from '../ui/ScreenContainer';
-import AuthTextField from '../ui/AuthTextField';
-import SelectField from '../ui/SelectField';
-import PrimaryButton from '../ui/PrimaryButton';
-import { createSession } from '../../constants/mockSessions';
-import { spacing } from '../../constants/theme';
-import { useAppTheme } from '../../constants/ThemeContext';
+import { useState } from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import ScreenContainer from "../ui/ScreenContainer";
+import AuthTextField from "../ui/AuthTextField";
+import SelectField from "../ui/SelectField";
+import PrimaryButton from "../ui/PrimaryButton";
+import { createSession } from "../../constants/mockSessions";
+import { spacing } from "../../constants/theme";
+import { useAppTheme } from "../../constants/ThemeContext";
 
-const DURATION_OPTIONS = ['5 minutes', '8 minutes', '10 minutes', '15 minutes'];
+const DURATION_OPTIONS = ["5 minutes", "8 minutes", "10 minutes", "15 minutes"];
 
 function getUpcomingDates(count) {
-  const formatter = new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
   return Array.from({ length: count }, (_, index) => {
     const date = new Date();
     date.setDate(date.getDate() + index);
@@ -24,8 +28,8 @@ function getUpcomingDates(count) {
 const DATE_OPTIONS = getUpcomingDates(14);
 
 export default function CreateSessionScreen() {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [duration, setDuration] = useState(DURATION_OPTIONS[1]);
   const [date, setDate] = useState(DATE_OPTIONS[0]);
   const { colors, typography } = useAppTheme();
@@ -102,22 +106,23 @@ export default function CreateSessionScreen() {
 
 function getStyles(colors, typography) {
   return StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    ...typography.heading,
-    fontSize: 18,
-    marginLeft: spacing.sm,
-  },
-  subtitle: {
-    ...typography.body,
-    marginTop: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: spacing.lg,
+    },
+    headerTitle: {
+      ...typography.heading,
+      fontSize: 20,
+      marginLeft: spacing.sm,
+    },
+    subtitle: {
+      ...typography.body,
+      fontSize: 15,
+      marginBottom: spacing.lg,
+    },
+    disabledButton: {
+      opacity: 0.5,
+    },
   });
 }

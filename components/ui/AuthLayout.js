@@ -1,9 +1,11 @@
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, useColorScheme } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { radius, spacing } from '../../constants/theme';
 import { useAppTheme } from '../../constants/ThemeContext';
 
 export default function AuthLayout({ children }) {
   const { colors } = useAppTheme();
+  const scheme = useColorScheme();
   const styles = getStyles(colors);
 
   return (
@@ -16,7 +18,13 @@ export default function AuthLayout({ children }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.card}>{children}</View>
+        <BlurView
+          intensity={40}
+          tint={scheme === 'dark' ? 'dark' : 'light'}
+          style={styles.card}
+        >
+          <View style={styles.cardOverlay}>{children}</View>
+        </BlurView>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -24,24 +32,24 @@ export default function AuthLayout({ children }) {
 
 function getStyles(colors) {
   return StyleSheet.create({
-  flex: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: spacing.lg,
-  },
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: radius.lg,
-    padding: spacing.xl,
-    shadowColor: '#101828',
-    shadowOpacity: 0.06,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 24,
-    elevation: 3,
-  },
+    flex: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    scrollContent: {
+      flexGrow: 1,
+      justifyContent: 'center',
+      padding: spacing.lg,
+    },
+    card: {
+      borderRadius: radius.lg,
+      overflow: 'hidden',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.cardBorder,
+    },
+    cardOverlay: {
+      backgroundColor: colors.card,
+      padding: spacing.xl,
+    },
   });
 }

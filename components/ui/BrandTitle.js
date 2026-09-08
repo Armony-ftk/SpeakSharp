@@ -1,6 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useAppTheme } from '../../constants/ThemeContext';
+import { StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useAppTheme } from "../../constants/ThemeContext";
 
 export default function BrandTitle({ style }) {
   const { colors, typography } = useAppTheme();
@@ -9,8 +9,7 @@ export default function BrandTitle({ style }) {
   return (
     <View style={[styles.row, style]}>
       <View style={styles.iconWrap}>
-        <Ionicons name="mic" size={26} color={colors.navy} />
-        <Ionicons name="trending-up" size={16} color={colors.accent} style={styles.arrow} />
+        <Ionicons name="mic" size={20} color="#FFFFFF" />
       </View>
       <Text style={styles.title}>SpeakSharp</Text>
     </View>
@@ -19,24 +18,21 @@ export default function BrandTitle({ style }) {
 
 function getStyles(colors, typography) {
   return StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  iconWrap: {
-    width: 32,
-    height: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 6,
-  },
-  arrow: {
-    position: 'absolute',
-    top: -6,
-    right: -8,
-  },
-  title: {
-    ...typography.brand,
-  },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    iconWrap: {
+      width: 38,
+      height: 38,
+      borderRadius: 11,
+      backgroundColor: colors.accent,
+      justifyContent: "center",
+      alignItems: "center",
+      marginRight: 10,
+    },
+    title: {
+      ...typography.brand,
+    },
   });
 }
