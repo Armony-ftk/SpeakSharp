@@ -109,6 +109,7 @@ function getStyles(colors, typography) {
     headerRow: {
       flexDirection: "row",
       alignItems: "center",
+      marginBottom: spacing.lg,
     },
     headerTitle: {
       ...typography.heading,
@@ -118,7 +119,6 @@ function getStyles(colors, typography) {
     subtitle: {
       ...typography.body,
       fontSize: 15,
-      marginTop: spacing.md,
       marginBottom: spacing.lg,
     },
     disabledButton: {

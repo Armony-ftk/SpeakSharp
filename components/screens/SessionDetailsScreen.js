@@ -157,7 +157,9 @@ export default function SessionDetailsScreen() {
             />
           )}
 
-          <Text style={styles.sectionTitle}>Previous Attempts</Text>
+          <Text style={[styles.sectionTitle, styles.attemptsTitle]}>
+            Previous Attempts
+          </Text>
           {session.previousAttempts.map((attempt) => (
             <AttemptListItem
               key={attempt.number}
@@ -271,7 +273,7 @@ function getStyles(colors, typography) {
     },
     statsRow: {
       flexDirection: "row",
-      gap: spacing.sm + 4,
+      gap: spacing.smd,
       marginBottom: spacing.lg,
     },
     sectionTitle: {
@@ -280,13 +282,16 @@ function getStyles(colors, typography) {
       color: colors.navy,
       marginBottom: spacing.md,
     },
+    attemptsTitle: {
+      marginTop: spacing.lg,
+    },
     improvementCard: {
       backgroundColor: colors.card,
       borderRadius: radius.md,
       borderWidth: 1,
       borderColor: colors.cardBorder,
       padding: spacing.md,
-      marginBottom: spacing.lg,
+      marginBottom: spacing.md,
       shadowColor: "#101828",
       shadowOpacity: 0.05,
       shadowOffset: { width: 0, height: 4 },

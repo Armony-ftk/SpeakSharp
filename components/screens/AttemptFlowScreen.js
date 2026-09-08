@@ -500,7 +500,7 @@ function getStyles(colors, typography) {
     },
     attemptSubtitle: {
       ...typography.body,
-      marginTop: 2,
+      marginTop: spacing.xs,
       textAlign: "center",
     },
     recordingBody: {

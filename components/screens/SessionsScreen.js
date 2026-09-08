@@ -137,7 +137,7 @@ function getStyles(colors, typography) {
     subtitle: {
       ...typography.body,
       fontSize: 15,
-      marginTop: spacing.sm,
+      marginTop: spacing.xs,
       marginBottom: spacing.lg,
     },
     emptyContent: {
@@ -162,7 +162,7 @@ function getStyles(colors, typography) {
     practiceGrid: {
       flexDirection: "row",
       flexWrap: "wrap",
-      gap: spacing.sm + 4,
+      gap: spacing.smd,
     },
     practiceCard: {
       flexBasis: "47%",
@@ -186,13 +186,13 @@ function getStyles(colors, typography) {
     practiceMeta: {
       fontSize: 13,
       color: colors.textSecondary,
-      marginTop: 4,
+      marginTop: spacing.xs,
     },
     practiceFooter: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      marginTop: spacing.sm + 4,
+      marginTop: spacing.smd,
     },
     practiceScore: {
       fontSize: 13,
@@ -211,7 +211,7 @@ function getStyles(colors, typography) {
       borderColor: colors.cardBorder,
       borderRadius: radius.pill,
       paddingVertical: 5,
-      paddingHorizontal: spacing.sm + 4,
+      paddingHorizontal: spacing.smd,
     },
     resumeLabel: {
       fontSize: 12,

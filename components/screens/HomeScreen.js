@@ -233,13 +233,13 @@ function getStyles(colors, typography) {
     newPill: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 4,
+      gap: spacing.xs,
       backgroundColor: colors.card,
       borderWidth: 1,
       borderColor: colors.cardBorder,
       borderRadius: radius.pill,
       paddingVertical: 7,
-      paddingHorizontal: spacing.sm + 4,
+      paddingHorizontal: spacing.smd,
       ...cardShadow,
     },
     newPillLabel: {
@@ -264,13 +264,13 @@ function getStyles(colors, typography) {
     subtitle: {
       ...typography.body,
       fontSize: 15,
-      marginTop: spacing.sm,
+      marginTop: spacing.xs,
     },
     cta: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
-      gap: spacing.sm + 2,
+      gap: spacing.sm,
       backgroundColor: colors.card,
       borderWidth: 1,
       borderColor: colors.cardBorder,
@@ -317,12 +317,12 @@ function getStyles(colors, typography) {
       fontSize: 18,
       fontWeight: "700",
       color: colors.navy,
-      marginTop: spacing.xl,
+      marginTop: spacing.lg,
       marginBottom: spacing.md,
     },
     statsRow: {
       flexDirection: "row",
-      gap: spacing.sm + 4,
+      gap: spacing.smd,
     },
     statCard: {
       flex: 1,
@@ -347,7 +347,7 @@ function getStyles(colors, typography) {
     sessionsGrid: {
       flexDirection: "row",
       flexWrap: "wrap",
-      gap: spacing.sm + 4,
+      gap: spacing.smd,
     },
     sessionCard: {
       flexBasis: "47%",
@@ -367,13 +367,13 @@ function getStyles(colors, typography) {
     sessionMeta: {
       fontSize: 13,
       color: colors.textSecondary,
-      marginTop: 4,
+      marginTop: spacing.xs,
     },
     sessionFooter: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      marginTop: spacing.sm + 4,
+      marginTop: spacing.smd,
     },
     sessionScore: {
       fontSize: 13,
@@ -392,7 +392,7 @@ function getStyles(colors, typography) {
       borderColor: colors.cardBorder,
       borderRadius: radius.pill,
       paddingVertical: 5,
-      paddingHorizontal: spacing.sm + 4,
+      paddingHorizontal: spacing.smd,
     },
     resumeLabel: {
       fontSize: 12,

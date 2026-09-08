@@ -102,16 +102,16 @@ function getStyles(colors, typography) {
     subtitle: {
       ...typography.body,
       fontSize: 15,
-      marginTop: spacing.sm,
+      marginTop: spacing.xs,
       marginBottom: spacing.lg,
     },
     statsGrid: {
-      gap: spacing.sm + 4,
+      gap: spacing.smd,
       marginBottom: spacing.lg,
     },
     statsRow: {
       flexDirection: "row",
-      gap: spacing.sm + 4,
+      gap: spacing.smd,
     },
     sectionTitle: {
       fontSize: 17,

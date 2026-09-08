@@ -98,7 +98,7 @@ function getStyles(colors, typography) {
   return StyleSheet.create({
     avatarSection: {
       alignItems: "center",
-      marginBottom: spacing.lg,
+      marginBottom: spacing.md,
     },
     avatar: {
       width: 88,

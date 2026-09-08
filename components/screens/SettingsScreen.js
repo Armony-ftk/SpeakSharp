@@ -93,7 +93,6 @@ function getStyles(colors, typography) {
       fontWeight: "700",
       color: colors.navy,
       marginBottom: spacing.md,
-      marginTop: spacing.sm,
     },
     card: {
       backgroundColor: colors.card,
@@ -115,8 +114,7 @@ function getStyles(colors, typography) {
       borderWidth: 1,
       borderColor: "#D92D20",
       borderRadius: radius.sm,
-      paddingVertical: 12,
-      marginTop: spacing.sm,
+      paddingVertical: spacing.smd,
     },
     signOutText: {
       fontSize: 14,

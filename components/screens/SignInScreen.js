@@ -87,7 +87,7 @@ function getStyles(colors, typography) {
       lineHeight: 20,
       letterSpacing: 0.1,
       marginTop: spacing.xs,
-      marginBottom: spacing.lg * 1.5,
+      marginBottom: spacing.lg,
     },
     forgotLink: {
       alignSelf: 'flex-end',
@@ -103,7 +103,7 @@ function getStyles(colors, typography) {
       flexDirection: 'row',
       justifyContent: 'center',
       alignItems: 'center',
-      marginTop: spacing.lg * 1.5,
+      marginTop: spacing.lg,
     },
     footerText: {
       ...typography.body,
