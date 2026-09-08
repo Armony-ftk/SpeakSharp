@@ -14,8 +14,8 @@ export default function ConfirmDialog({
   onCancel,
   onConfirm,
 }) {
-  const { colors, typography } = useAppTheme();
-  const styles = getStyles(colors, typography);
+  const { colors, typography, isDark } = useAppTheme();
+  const styles = getStyles(colors, typography, isDark);
 
   return (
     <Modal
@@ -69,20 +69,28 @@ export default function ConfirmDialog({
   );
 }
 
-function getStyles(colors, typography) {
+function getStyles(colors, typography, isDark) {
   return StyleSheet.create({
     overlay: {
       flex: 1,
-      backgroundColor: "rgba(16, 24, 40, 0.5)",
+      backgroundColor: "rgba(16, 24, 40, 0.65)",
       alignItems: "center",
       justifyContent: "center",
       padding: spacing.lg,
     },
     card: {
       width: "100%",
-      backgroundColor: colors.card,
+      // Solid surface so underlying screen content can't bleed through.
+      backgroundColor: isDark ? "#171C26" : "#FFFFFF",
+      borderWidth: 1,
+      borderColor: colors.cardBorder,
       borderRadius: radius.lg,
       padding: spacing.lg,
+      shadowColor: "#101828",
+      shadowOpacity: 0.25,
+      shadowOffset: { width: 0, height: 8 },
+      shadowRadius: 24,
+      elevation: 8,
     },
     title: {
       ...typography.heading,

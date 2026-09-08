@@ -1,14 +1,19 @@
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { radius, spacing } from '../../constants/theme';
-import { useAppTheme } from '../../constants/ThemeContext';
+import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { radius, spacing } from "../../constants/theme";
+import { useAppTheme } from "../../constants/ThemeContext";
 
 export default function ActionSheet({ visible, onClose, title, actions }) {
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
       <View style={styles.overlay}>
         <View style={styles.sheet}>
           <View style={styles.header}>
@@ -30,9 +35,14 @@ export default function ActionSheet({ visible, onClose, title, actions }) {
               <Ionicons
                 name={action.icon}
                 size={18}
-                color={action.destructive ? '#D92D20' : colors.navy}
+                color={action.destructive ? "#D92D20" : colors.navy}
               />
-              <Text style={[styles.label, action.destructive && styles.labelDestructive]}>
+              <Text
+                style={[
+                  styles.label,
+                  action.destructive && styles.labelDestructive,
+                ]}
+              >
                 {action.label}
               </Text>
             </TouchableOpacity>
@@ -45,40 +55,40 @@ export default function ActionSheet({ visible, onClose, title, actions }) {
 
 function getStyles(colors, typography) {
   return StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(16, 24, 40, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: colors.card,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    padding: spacing.lg,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
-  },
-  title: {
-    ...typography.heading,
-    fontSize: 17,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-  },
-  label: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.navy,
-    marginLeft: spacing.sm,
-  },
-  labelDestructive: {
-    color: '#D92D20',
-  },
+    overlay: {
+      flex: 1,
+      backgroundColor: "rgba(16, 24, 40, 0.5)",
+      justifyContent: "flex-end",
+    },
+    sheet: {
+      backgroundColor: colors.card,
+      borderTopLeftRadius: radius.lg,
+      borderTopRightRadius: radius.lg,
+      padding: spacing.lg,
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: spacing.md,
+    },
+    title: {
+      ...typography.heading,
+      fontSize: 17,
+    },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: spacing.sm,
+    },
+    label: {
+      fontSize: 15,
+      fontWeight: "600",
+      color: colors.navy,
+      marginLeft: spacing.sm,
+    },
+    labelDestructive: {
+      color: "#D92D20",
+    },
   });
 }

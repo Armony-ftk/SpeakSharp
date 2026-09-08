@@ -1,8 +1,14 @@
-import { useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { radius, spacing } from '../../constants/theme';
-import { useAppTheme } from '../../constants/ThemeContext';
+import { useState } from "react";
+import {
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { radius, spacing } from "../../constants/theme";
+import { useAppTheme } from "../../constants/ThemeContext";
 
 export default function AuthTextField({
   label,
@@ -12,8 +18,8 @@ export default function AuthTextField({
   onChangeText,
   secureTextEntry,
   helperText,
-  keyboardType = 'default',
-  autoCapitalize = 'none',
+  keyboardType = "default",
+  autoCapitalize = "none",
   multiline,
   numberOfLines,
   style,
@@ -42,7 +48,11 @@ export default function AuthTextField({
           />
         ) : null}
         <TextInput
-          style={[styles.input, multiline && styles.inputMultiline, styles.noNativeOutline]}
+          style={[
+            styles.input,
+            multiline && styles.inputMultiline,
+            styles.noNativeOutline,
+          ]}
           placeholder={placeholder}
           placeholderTextColor={colors.placeholder}
           value={value}
@@ -52,14 +62,17 @@ export default function AuthTextField({
           autoCapitalize={autoCapitalize}
           multiline={multiline}
           numberOfLines={numberOfLines}
-          textAlignVertical={multiline ? 'top' : 'center'}
+          textAlignVertical={multiline ? "top" : "center"}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
         />
         {secureTextEntry ? (
-          <TouchableOpacity onPress={() => setIsSecure((prev) => !prev)} hitSlop={8}>
+          <TouchableOpacity
+            onPress={() => setIsSecure((prev) => !prev)}
+            hitSlop={8}
+          >
             <Ionicons
-              name={isSecure ? 'eye-outline' : 'eye-off-outline'}
+              name={isSecure ? "eye-outline" : "eye-off-outline"}
               size={18}
               color={colors.placeholder}
             />
@@ -78,13 +91,13 @@ function getStyles(colors, typography) {
     },
     label: {
       fontSize: 13,
-      fontWeight: '600',
+      fontWeight: "600",
       color: colors.navySoft,
       marginBottom: spacing.xs,
     },
     inputWrapper: {
-      flexDirection: 'row',
-      alignItems: 'center',
+      flexDirection: "row",
+      alignItems: "center",
       backgroundColor: colors.inputBackground,
       borderRadius: radius.sm,
       borderWidth: 1,
@@ -96,7 +109,7 @@ function getStyles(colors, typography) {
       borderWidth: 1.5,
     },
     inputWrapperMultiline: {
-      alignItems: 'flex-start',
+      alignItems: "flex-start",
       paddingVertical: spacing.xs,
     },
     icon: {
@@ -109,7 +122,7 @@ function getStyles(colors, typography) {
       color: colors.textPrimary,
     },
     noNativeOutline: {
-      outlineStyle: 'none',
+      outlineStyle: "none",
     },
     inputMultiline: {
       minHeight: 80,

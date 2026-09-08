@@ -1,41 +1,41 @@
-import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { Link, Redirect } from 'expo-router';
-import AuthLayout from '../ui/AuthLayout';
-import BrandTitle from '../ui/BrandTitle';
-import AuthTextField from '../ui/AuthTextField';
-import PrimaryButton from '../ui/PrimaryButton';
-import OrDivider from '../ui/OrDivider';
-import GoogleButton from '../ui/GoogleButton';
-import Checkbox from '../ui/Checkbox';
-import SplashScreen from './SplashScreen';
-import { spacing } from '../../constants/theme';
-import { useAppTheme } from '../../constants/ThemeContext';
+import { useEffect, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
+import { Link, Redirect } from "expo-router";
+import AuthLayout from "../ui/AuthLayout";
+import BrandTitle from "../ui/BrandTitle";
+import AuthTextField from "../ui/AuthTextField";
+import PrimaryButton from "../ui/PrimaryButton";
+import OrDivider from "../ui/OrDivider";
+import GoogleButton from "../ui/GoogleButton";
+import Checkbox from "../ui/Checkbox";
+import SplashScreen from "./SplashScreen";
+import { spacing } from "../../constants/theme";
+import { useAppTheme } from "../../constants/ThemeContext";
 
 export default function SignUpScreen() {
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [agreed, setAgreed] = useState(false);
-  const [phase, setPhase] = useState('form');
+  const [phase, setPhase] = useState("form");
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
 
   useEffect(() => {
-    if (phase !== 'loading') return;
-    const timer = setTimeout(() => setPhase('done'), 1200);
+    if (phase !== "loading") return;
+    const timer = setTimeout(() => setPhase("done"), 1200);
     return () => clearTimeout(timer);
   }, [phase]);
 
   const handleCreateAccount = () => {
-    setPhase('loading');
+    setPhase("loading");
   };
 
-  if (phase === 'done') {
+  if (phase === "done") {
     return <Redirect href="/home?variant=new" />;
   }
 
-  if (phase === 'loading') {
+  if (phase === "loading") {
     return <SplashScreen />;
   }
 
@@ -43,7 +43,9 @@ export default function SignUpScreen() {
     <AuthLayout>
       <BrandTitle />
       <Text style={styles.heading}>Create Account</Text>
-      <Text style={styles.subtitle}>Start your journey to becoming a better speaker.</Text>
+      <Text style={styles.subtitle}>
+        Start your journey to becoming a better speaker.
+      </Text>
 
       <AuthTextField
         label="Full Name"
@@ -73,7 +75,8 @@ export default function SignUpScreen() {
 
       <Checkbox checked={agreed} onToggle={() => setAgreed((prev) => !prev)}>
         <Text style={styles.termsText}>
-          I agree to the <Text style={styles.termsLink}>Terms & Conditions</Text> and{' '}
+          I agree to the{" "}
+          <Text style={styles.termsLink}>Terms & Conditions</Text> and{" "}
           <Text style={styles.termsLink}>Privacy Policy</Text>.
         </Text>
       </Checkbox>
@@ -95,36 +98,36 @@ export default function SignUpScreen() {
 
 function getStyles(colors, typography) {
   return StyleSheet.create({
-  heading: {
-    ...typography.heading,
-    marginTop: spacing.lg,
-  },
-  subtitle: {
-    ...typography.body,
-    marginTop: spacing.xs,
-    marginBottom: spacing.lg,
-  },
-  termsText: {
-    ...typography.body,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  termsLink: {
-    color: colors.accent,
-    fontWeight: '600',
-  },
-  footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: spacing.lg,
-  },
-  footerText: {
-    ...typography.body,
-  },
-  footerLink: {
-    color: colors.accent,
-    fontSize: 14,
-    fontWeight: '700',
-  },
+    heading: {
+      ...typography.heading,
+      marginTop: spacing.lg,
+    },
+    subtitle: {
+      ...typography.body,
+      marginTop: spacing.xs,
+      marginBottom: spacing.lg,
+    },
+    termsText: {
+      ...typography.body,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    termsLink: {
+      color: colors.accent,
+      fontWeight: "600",
+    },
+    footerRow: {
+      flexDirection: "row",
+      justifyContent: "center",
+      marginTop: spacing.lg,
+    },
+    footerText: {
+      ...typography.body,
+    },
+    footerLink: {
+      color: colors.accent,
+      fontSize: 14,
+      fontWeight: "700",
+    },
   });
 }
