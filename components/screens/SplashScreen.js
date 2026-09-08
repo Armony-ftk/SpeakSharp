@@ -1,7 +1,7 @@
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import LogoMark from '../ui/LogoMark';
-import { spacing } from '../../constants/theme';
-import { useAppTheme } from '../../constants/ThemeContext';
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import LogoMark from "../ui/LogoMark";
+import { spacing } from "../../constants/theme";
+import { useAppTheme } from "../../constants/ThemeContext";
 
 export default function SplashScreen() {
   const { colors, typography } = useAppTheme();
@@ -18,19 +18,19 @@ export default function SplashScreen() {
 
 function getStyles(colors, typography) {
   return StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tagline: {
-    ...typography.body,
-    marginTop: spacing.xs,
-    marginBottom: spacing.xl,
-  },
-  spinner: {
-    marginTop: spacing.sm,
-  },
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    tagline: {
+      ...typography.body,
+      marginTop: spacing.xs,
+      marginBottom: spacing.xl,
+    },
+    spinner: {
+      marginTop: spacing.sm,
+    },
   });
 }
