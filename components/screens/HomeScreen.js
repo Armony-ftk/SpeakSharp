@@ -343,13 +343,11 @@ function getStyles(colors, typography) {
       marginTop: spacing.xs,
     },
     sessionsGrid: {
-      flexDirection: "row",
-      flexWrap: "wrap",
+      flexDirection: "column",
       gap: spacing.smd,
     },
     sessionCard: {
-      flexBasis: "47%",
-      flexGrow: 1,
+      width: "100%",
       backgroundColor: colors.card,
       borderWidth: 1,
       borderColor: colors.cardBorder,
