@@ -366,9 +366,8 @@ function getStyles(colors, typography) {
       marginTop: spacing.xs,
     },
     sessionFooter: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
+      alignItems: "flex-start",
+      gap: spacing.sm,
       marginTop: spacing.smd,
     },
     sessionScore: {
