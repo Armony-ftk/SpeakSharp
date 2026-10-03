@@ -29,15 +29,17 @@ function GoogleGlyph({ size = 18 }) {
 export default function GoogleButton({
   onPress,
   label = "Sign in with Google",
+  disabled = false,
 }) {
   const { colors } = useAppTheme();
   const styles = getStyles(colors);
 
   return (
     <TouchableOpacity
-      style={styles.button}
+      style={[styles.button, disabled && styles.buttonDisabled]}
       onPress={onPress}
       activeOpacity={0.8}
+      disabled={disabled}
     >
       <GoogleGlyph />
       <Text style={styles.label}>{label}</Text>
@@ -67,6 +69,9 @@ function getStyles(colors) {
       fontWeight: "600",
       color: colors.textPrimary,
       marginLeft: spacing.sm,
+    },
+    buttonDisabled: {
+      opacity: 0.5,
     },
   });
 }

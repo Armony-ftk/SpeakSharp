@@ -1,18 +1,16 @@
-import { useEffect, useState } from 'react';
 import { Redirect } from 'expo-router';
-import SplashScreen from '../components/screens/SplashScreen';
+import { useAuth } from '../hooks/useAuth';
 
 export default function Index() {
-  const [ready, setReady] = useState(false);
+  const { currentUser, isEmailVerified } = useAuth();
 
-  useEffect(() => {
-    const timer = setTimeout(() => setReady(true), 1200);
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (!ready) {
-    return <SplashScreen />;
+  if (!currentUser) {
+    return <Redirect href="/sign-in" />;
   }
 
-  return <Redirect href="/sign-in" />;
+  if (!isEmailVerified) {
+    return <Redirect href="/verify-email" />;
+  }
+
+  return <Redirect href="/home" />;
 }

@@ -23,6 +23,7 @@ export default function AuthTextField({
   multiline,
   numberOfLines,
   style,
+  ...inputProps
 }) {
   const [isSecure, setIsSecure] = useState(!!secureTextEntry);
   const [isFocused, setIsFocused] = useState(false);
@@ -65,6 +66,7 @@ export default function AuthTextField({
           textAlignVertical={multiline ? "top" : "center"}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
+          {...inputProps}
         />
         {secureTextEntry ? (
           <TouchableOpacity

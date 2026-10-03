@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { Link, Redirect } from "expo-router";
+import { Link, router } from "expo-router";
 import AuthLayout from "../ui/AuthLayout";
 import BrandTitle from "../ui/BrandTitle";
 import AuthTextField from "../ui/AuthTextField";
@@ -8,36 +8,98 @@ import PrimaryButton from "../ui/PrimaryButton";
 import OrDivider from "../ui/OrDivider";
 import GoogleButton from "../ui/GoogleButton";
 import Checkbox from "../ui/Checkbox";
-import SplashScreen from "./SplashScreen";
 import { spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
+import {
+  getAuthErrorMessage,
+  registerWithEmail,
+  sendVerificationEmail,
+} from "../../services/authService";
+import { createUserProfile } from "../../services/profileService";
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MIN_PASSWORD_LENGTH = 8;
 
 export default function SignUpScreen() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [agreed, setAgreed] = useState(false);
-  const [phase, setPhase] = useState("form");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [loading, setLoading] = useState(false);
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
 
-  useEffect(() => {
-    if (phase !== "loading") return;
-    const timer = setTimeout(() => setPhase("done"), 1200);
-    return () => clearTimeout(timer);
-  }, [phase]);
+  const handleCreateAccount = async () => {
+    if (loading) return;
 
-  const handleCreateAccount = () => {
-    setPhase("loading");
+    const normalizedName = fullName.trim();
+    const normalizedEmail = email.trim();
+
+    if (!normalizedName || !normalizedEmail || !password || !confirmPassword) {
+      setErrorMessage("Complete all required fields.");
+      return;
+    }
+
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+      setErrorMessage("Enter a valid email address.");
+      return;
+    }
+
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setErrorMessage("Password must be at least 8 characters.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setErrorMessage("Passwords do not match.");
+      return;
+    }
+
+    if (!agreed) {
+      setErrorMessage("Accept the Terms & Conditions and Privacy Policy.");
+      return;
+    }
+
+    setErrorMessage("");
+    setLoading(true);
+
+    try {
+      const credential = await registerWithEmail(normalizedEmail, password);
+      const verificationMessages = [];
+
+      try {
+        await createUserProfile(credential.user.uid, {
+          fullName: normalizedName,
+          email: normalizedEmail,
+        });
+      } catch (error) {
+        if (__DEV__) {
+          console.warn("Could not create the Firestore user profile", error);
+        }
+        verificationMessages.push(
+          "Your account was created, but your profile could not be saved. Check your connection and contact support if the problem continues.",
+        );
+      }
+
+      try {
+        await sendVerificationEmail(credential.user);
+      } catch (error) {
+        verificationMessages.push(getAuthErrorMessage(error));
+      }
+
+      router.replace({
+        pathname: "/verify-email",
+        params: verificationMessages.length
+          ? { message: verificationMessages.join(" "), messageType: "error" }
+          : {},
+      });
+    } catch (error) {
+      setErrorMessage(getAuthErrorMessage(error));
+      setLoading(false);
+    }
   };
-
-  if (phase === "done") {
-    return <Redirect href="/home?variant=new" />;
-  }
-
-  if (phase === "loading") {
-    return <SplashScreen />;
-  }
 
   return (
     <AuthLayout>
@@ -54,6 +116,7 @@ export default function SignUpScreen() {
         value={fullName}
         onChangeText={setFullName}
         autoCapitalize="words"
+        editable={!loading}
       />
       <AuthTextField
         label="Email Address"
@@ -62,6 +125,7 @@ export default function SignUpScreen() {
         value={email}
         onChangeText={setEmail}
         keyboardType="email-address"
+        editable={!loading}
       />
       <AuthTextField
         label="Password"
@@ -71,6 +135,16 @@ export default function SignUpScreen() {
         onChangeText={setPassword}
         secureTextEntry
         helperText="Must be at least 8 characters."
+        editable={!loading}
+      />
+      <AuthTextField
+        label="Confirm Password"
+        placeholder="••••••••"
+        icon="lock-closed-outline"
+        value={confirmPassword}
+        onChangeText={setConfirmPassword}
+        secureTextEntry
+        editable={!loading}
       />
 
       <Checkbox checked={agreed} onToggle={() => setAgreed((prev) => !prev)}>
@@ -81,10 +155,19 @@ export default function SignUpScreen() {
         </Text>
       </Checkbox>
 
-      <PrimaryButton label="CREATE ACCOUNT →" onPress={handleCreateAccount} />
+      {errorMessage ? (
+        <Text style={styles.errorText}>{errorMessage}</Text>
+      ) : null}
+
+      <PrimaryButton
+        label="CREATE ACCOUNT →"
+        loadingLabel="CREATING ACCOUNT..."
+        loading={loading}
+        onPress={handleCreateAccount}
+      />
 
       <OrDivider />
-      <GoogleButton label="Sign up with Google" onPress={() => {}} />
+      <GoogleButton label="Sign up with Google" onPress={() => {}} disabled />
 
       <View style={styles.footerRow}>
         <Text style={styles.footerText}>Already have an account? </Text>
@@ -115,6 +198,12 @@ function getStyles(colors, typography) {
     termsLink: {
       color: colors.accent,
       fontWeight: "600",
+    },
+    errorText: {
+      color: "#D92D20",
+      fontSize: 13,
+      lineHeight: 18,
+      marginBottom: spacing.sm,
     },
     footerRow: {
       flexDirection: "row",

@@ -7,6 +7,7 @@ import AppHeader from "../ui/AppHeader";
 import SettingsRow from "../ui/SettingsRow";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
+import { getAuthErrorMessage, logout } from "../../services/authService";
 
 export default function SettingsScreen() {
   const { isDark, setIsDark, colors, typography } = useAppTheme();
@@ -14,6 +15,22 @@ export default function SettingsScreen() {
   // Notifications / Offline Mode are local UI state only — not yet wired to real behavior.
   const [notifications, setNotifications] = useState(true);
   const [offlineMode, setOfflineMode] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState("");
+
+  const handleSignOut = async () => {
+    if (isSigningOut) return;
+
+    setSignOutError("");
+    setIsSigningOut(true);
+
+    try {
+      await logout();
+    } catch (error) {
+      setSignOutError(getAuthErrorMessage(error));
+      setIsSigningOut(false);
+    }
+  };
 
   return (
     <ScreenContainer>
@@ -75,13 +92,19 @@ export default function SettingsScreen() {
       </View>
 
       <TouchableOpacity
-        style={styles.signOutButton}
-        onPress={() => router.replace("/sign-in")}
+        style={[styles.signOutButton, isSigningOut && styles.buttonDisabled]}
+        onPress={handleSignOut}
         activeOpacity={0.8}
+        disabled={isSigningOut}
       >
         <Ionicons name="log-out-outline" size={16} color="#D92D20" />
-        <Text style={styles.signOutText}>Sign Out</Text>
+        <Text style={styles.signOutText}>
+          {isSigningOut ? "Signing Out..." : "Sign Out"}
+        </Text>
       </TouchableOpacity>
+      {signOutError ? (
+        <Text style={styles.signOutError}>{signOutError}</Text>
+      ) : null}
     </ScreenContainer>
   );
 }
@@ -121,6 +144,16 @@ function getStyles(colors, typography) {
       fontWeight: "700",
       color: "#D92D20",
       marginLeft: spacing.xs,
+    },
+    buttonDisabled: {
+      opacity: 0.6,
+    },
+    signOutError: {
+      color: "#D92D20",
+      fontSize: 13,
+      lineHeight: 18,
+      textAlign: "center",
+      marginTop: spacing.sm,
     },
   });
 }

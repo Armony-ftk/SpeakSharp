@@ -1,21 +1,56 @@
-import { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Link, router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import AuthLayout from '../ui/AuthLayout';
-import BrandTitle from '../ui/BrandTitle';
-import AuthTextField from '../ui/AuthTextField';
-import PrimaryButton from '../ui/PrimaryButton';
-import { spacing } from '../../constants/theme';
-import { useAppTheme } from '../../constants/ThemeContext';
+import { useState } from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Link, router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import AuthLayout from "../ui/AuthLayout";
+import BrandTitle from "../ui/BrandTitle";
+import AuthTextField from "../ui/AuthTextField";
+import PrimaryButton from "../ui/PrimaryButton";
+import { spacing } from "../../constants/theme";
+import { useAppTheme } from "../../constants/ThemeContext";
+import {
+  getAuthErrorMessage,
+  sendPasswordReset,
+} from "../../services/authService";
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function ForgotPasswordScreen() {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
 
-  const handleSendResetLink = () => {
-    // TODO: wire up password reset request
+  const handleSendResetLink = async () => {
+    if (loading) return;
+
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) {
+      setErrorMessage("Enter your email address.");
+      return;
+    }
+
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+      setErrorMessage("Enter a valid email address.");
+      return;
+    }
+
+    setErrorMessage("");
+    setSuccessMessage("");
+    setLoading(true);
+
+    try {
+      await sendPasswordReset(normalizedEmail);
+      setSuccessMessage(
+        "Password reset instructions have been sent. Check your inbox.",
+      );
+    } catch (error) {
+      setErrorMessage(getAuthErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -29,7 +64,8 @@ export default function ForgotPasswordScreen() {
 
       <Text style={styles.heading}>Forgot Password?</Text>
       <Text style={styles.subtitle}>
-        Enter your email address and we'll send you instructions to reset your password.
+        Enter your email address and we'll send you instructions to reset your
+        password.
       </Text>
 
       <AuthTextField
@@ -39,9 +75,22 @@ export default function ForgotPasswordScreen() {
         value={email}
         onChangeText={setEmail}
         keyboardType="email-address"
+        editable={!loading}
       />
 
-      <PrimaryButton label="SEND RESET LINK" onPress={handleSendResetLink} />
+      {errorMessage ? (
+        <Text style={styles.errorText}>{errorMessage}</Text>
+      ) : null}
+      {successMessage ? (
+        <Text style={styles.successText}>{successMessage}</Text>
+      ) : null}
+
+      <PrimaryButton
+        label="SEND RESET LINK"
+        loadingLabel="SENDING..."
+        loading={loading}
+        onPress={handleSendResetLink}
+      />
 
       <Link href="/sign-in" style={styles.footerLink}>
         Return to log in
@@ -52,28 +101,40 @@ export default function ForgotPasswordScreen() {
 
 function getStyles(colors, typography) {
   return StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  headerTitle: {
-    marginLeft: spacing.sm,
-  },
-  heading: {
-    ...typography.heading,
-  },
-  subtitle: {
-    ...typography.body,
-    marginTop: spacing.xs,
-    marginBottom: spacing.lg,
-  },
-  footerLink: {
-    color: colors.accent,
-    fontSize: 14,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginTop: spacing.lg,
-  },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: spacing.lg,
+    },
+    headerTitle: {
+      marginLeft: spacing.sm,
+    },
+    heading: {
+      ...typography.heading,
+    },
+    subtitle: {
+      ...typography.body,
+      marginTop: spacing.xs,
+      marginBottom: spacing.lg,
+    },
+    errorText: {
+      color: "#D92D20",
+      fontSize: 13,
+      lineHeight: 18,
+      marginBottom: spacing.sm,
+    },
+    successText: {
+      color: colors.success,
+      fontSize: 13,
+      lineHeight: 18,
+      marginBottom: spacing.sm,
+    },
+    footerLink: {
+      color: colors.accent,
+      fontSize: 14,
+      fontWeight: "700",
+      textAlign: "center",
+      marginTop: spacing.lg,
+    },
   });
 }
