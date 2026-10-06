@@ -1,0 +1,96 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function validProfile(data) {
+      return data.keys().hasAll(['fullName', 'email', 'createdAt'])
+        && data.keys().hasOnly(['fullName', 'email', 'createdAt'])
+        && data.fullName is string
+        && data.fullName.size() > 0
+        && data.email is string
+        && data.email.size() > 0
+        && data.createdAt is timestamp;
+    }
+
+    function validSession(data) {
+      return data.keys().hasAll([
+          'title',
+          'context',
+          'targetDurationSeconds',
+          'presentationDate',
+          'status',
+          'attemptCount',
+          'latestRating',
+          'bestRating',
+          'ratingSum',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'title',
+          'context',
+          'targetDurationSeconds',
+          'presentationDate',
+          'status',
+          'attemptCount',
+          'latestRating',
+          'bestRating',
+          'ratingSum',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.title is string
+        && data.title.size() > 0
+        && (data.context == null || data.context is string)
+        && (data.targetDurationSeconds == null
+          || (data.targetDurationSeconds is int
+            && data.targetDurationSeconds > 0))
+        && (data.presentationDate == null || data.presentationDate is timestamp)
+        && data.status in ['active', 'completed']
+        && data.attemptCount is int
+        && data.attemptCount >= 0
+        && (data.latestRating == null || data.latestRating is number)
+        && (data.bestRating == null || data.bestRating is number)
+        && data.ratingSum is number
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid)
+        && validProfile(request.resource.data)
+        && request.resource.data.createdAt == request.time;
+      allow update: if isOwner(uid)
+        && validProfile(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
+
+      match /sessions/{sessionId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && validSession(request.resource.data)
+          && request.resource.data.status == 'active'
+          && request.resource.data.attemptCount == 0
+          && request.resource.data.latestRating == null
+          && request.resource.data.bestRating == null
+          && request.resource.data.ratingSum == 0
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+        allow update: if isOwner(uid)
+          && validSession(request.resource.data)
+          && request.resource.data.attemptCount == resource.data.attemptCount
+          && request.resource.data.latestRating == resource.data.latestRating
+          && request.resource.data.bestRating == resource.data.bestRating
+          && request.resource.data.ratingSum == resource.data.ratingSum
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if false;
+      }
+    }
+  }
+}

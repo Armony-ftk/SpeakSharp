@@ -21,11 +21,13 @@ export default function EmptyState({
       </View>
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.description}>{description}</Text>
-      <PrimaryButton
-        label={actionLabel}
-        onPress={onAction}
-        style={styles.button}
-      />
+      {actionLabel && onAction ? (
+        <PrimaryButton
+          label={actionLabel}
+          onPress={onAction}
+          style={styles.button}
+        />
+      ) : null}
     </View>
   );
 }

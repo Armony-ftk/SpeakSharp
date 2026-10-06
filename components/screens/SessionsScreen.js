@@ -1,6 +1,12 @@
-import { useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { router } from "expo-router";
+import { useCallback, useState } from "react";
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { router, useFocusEffect } from "expo-router";
 import ScreenContainer from "../ui/ScreenContainer";
 import AppHeader from "../ui/AppHeader";
 import FilterTabs from "../ui/FilterTabs";
@@ -9,48 +15,65 @@ import EmptyState from "../ui/EmptyState";
 import FloatingActionButton from "../ui/FloatingActionButton";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
+import {
+  getSessionErrorMessage,
+  getSessions,
+} from "../../services/sessionService";
 
 const FILTERS = [
   { label: "Active", value: "active" },
   { label: "Completed", value: "completed" },
 ];
 
-// Mock data standing in for a real sessions API.
-const sessions = [
-  {
-    id: "1",
-    title: "DSW Final Presentation",
-    date: "20 September",
-    attempts: 4,
-    latestScore: 8.1,
-    bestScore: 8.4,
-    status: "active",
-  },
-  {
-    id: "2",
-    title: "Database Presentation",
-    date: "25 September",
-    attempts: 2,
-    latestScore: 6.8,
-    bestScore: null,
-    status: "active",
-  },
-];
+function formatPresentationDate(value) {
+  if (!value) return "No presentation date";
+  const date = typeof value.toDate === "function" ? value.toDate() : value;
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return "No presentation date";
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
 
 export default function SessionsScreen() {
   const [filter, setFilter] = useState("active");
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+  const { colors, typography } = useAppTheme();
+  const styles = getStyles(colors, typography);
+
+  const loadSessions = useCallback(async () => {
+    setLoading(true);
+    setErrorMessage("");
+    try {
+      setSessions(await getSessions());
+    } catch (error) {
+      setErrorMessage(getSessionErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadSessions();
+    }, [loadSessions]),
+  );
+
   const filteredSessions = sessions.filter(
     (session) => session.status === filter,
   );
   const isEmpty = filteredSessions.length === 0;
-  const { colors, typography } = useAppTheme();
-  const styles = getStyles(colors, typography);
 
   return (
     <ScreenContainer
       contentStyle={isEmpty ? styles.emptyContent : undefined}
       floatingAction={
-        !isEmpty ? (
+        !loading && sessions.length > 0 ? (
           <FloatingActionButton
             onPress={() => router.push("/create-session")}
           />
@@ -65,11 +88,26 @@ export default function SessionsScreen() {
 
       <FilterTabs options={FILTERS} value={filter} onChange={setFilter} />
 
-      {isEmpty ? (
+      {loading && sessions.length === 0 ? (
+        <View style={styles.emptyBody}>
+          <ActivityIndicator color={colors.accent} />
+          <Text style={styles.loadingText}>Loading sessions...</Text>
+        </View>
+      ) : errorMessage && sessions.length === 0 ? (
+        <View style={styles.emptyBody}>
+          <EmptyState
+            icon="cloud-offline-outline"
+            title="Couldn't load sessions"
+            description={errorMessage}
+            actionLabel="TRY AGAIN"
+            onAction={loadSessions}
+          />
+        </View>
+      ) : isEmpty ? (
         <View style={styles.emptyBody}>
           <EmptyState
             icon="mic-outline"
-            title="No practice sessions"
+            title={`No ${filter} practice sessions`}
             description="Create a session for your upcoming presentation and start practising."
             actionLabel="+ CREATE SESSION"
             onAction={() => router.push("/create-session")}
@@ -81,10 +119,10 @@ export default function SessionsScreen() {
             <SessionCard
               key={session.id}
               title={session.title}
-              date={session.date}
-              attempts={session.attempts}
-              latestScore={session.latestScore}
-              bestScore={session.bestScore}
+              date={formatPresentationDate(session.presentationDate)}
+              attempts={session.attemptCount ?? 0}
+              latestScore={session.latestRating}
+              bestScore={session.bestRating}
               onPress={() => router.push(`/session/${session.id}`)}
             />
           ))}
@@ -96,27 +134,27 @@ export default function SessionsScreen() {
               <TouchableOpacity
                 key={session.id}
                 style={styles.practiceCard}
-                onPress={() => router.push(`/session/${session.id}/attempt`)}
+                onPress={() => router.push(`/session/${session.id}`)}
                 activeOpacity={0.8}
               >
                 <Text style={styles.practiceTitle} numberOfLines={1}>
                   {session.title}
                 </Text>
                 <Text style={styles.practiceMeta}>
-                  {session.attempts} attempts
+                  {session.attemptCount ?? 0} attempts
                 </Text>
                 <View style={styles.practiceFooter}>
                   <Text style={styles.practiceScore}>
                     Latest:{" "}
                     <Text style={styles.practiceScoreValue}>
-                      {session.latestScore != null
-                        ? session.latestScore.toFixed(1)
+                      {session.latestRating != null
+                        ? session.latestRating.toFixed(1)
                         : "--"}
                     </Text>
                     <Text style={styles.practiceScoreOutOf}> / 10</Text>
                   </Text>
                   <View style={styles.resumePill}>
-                    <Text style={styles.resumeLabel}>Resume</Text>
+                    <Text style={styles.resumeLabel}>Open</Text>
                   </View>
                 </View>
               </TouchableOpacity>
@@ -146,6 +184,11 @@ function getStyles(colors, typography) {
     emptyBody: {
       flex: 1,
       justifyContent: "center",
+    },
+    loadingText: {
+      ...typography.body,
+      textAlign: "center",
+      marginTop: spacing.sm,
     },
     divider: {
       height: StyleSheet.hairlineWidth,

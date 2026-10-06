@@ -1,7 +1,13 @@
 import { useCallback, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import ScreenContainer from "../ui/ScreenContainer";
 import AppHeader from "../ui/AppHeader";
 import LogoMark from "../ui/LogoMark";
@@ -9,28 +15,10 @@ import PrimaryButton from "../ui/PrimaryButton";
 import { getProfile } from "../../constants/mockProfile";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
-
-// Mock data standing in for a real sessions API.
-const overview = { sessions: 5, attempts: 21, average: 7.5 };
-const mockSessions = [
-  {
-    id: "1",
-    title: "DSW Final Presentation",
-    attempts: 4,
-    latestScore: 8.1,
-    status: "ready",
-    hasRecentFeedback: true,
-  },
-  {
-    id: "2",
-    title: "Database Presentation",
-    attempts: 2,
-    latestScore: 6.8,
-    status: "ready",
-    hasRecentFeedback: false,
-  },
-];
-const emptySessions = [];
+import {
+  getSessionErrorMessage,
+  getSessions,
+} from "../../services/sessionService";
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -40,54 +28,69 @@ function getGreeting() {
   return "Good evening";
 }
 
-// Decides which single CTA best moves the user forward, per the Next Best Action spec.
 function getNextBestAction(sessionList) {
   if (sessionList.length === 0) {
     return { label: "+ Start New Practice", route: "/create-session" };
   }
-  const noAttemptYet = sessionList.find((s) => s.attempts === 0);
-  if (noAttemptYet) {
-    return {
-      label: "Record First Attempt",
-      route: `/session/${noAttemptYet.id}/attempt`,
-    };
-  }
-  const pendingAnalysis = sessionList.find((s) => s.status === "processing");
-  if (pendingAnalysis) {
-    return {
-      label: "Continue Analysis",
-      route: `/session/${pendingAnalysis.id}`,
-    };
-  }
-  const withFeedback = sessionList.find((s) => s.hasRecentFeedback);
-  if (withFeedback) {
-    return {
-      label: "Record Another Attempt",
-      route: `/session/${withFeedback.id}/attempt`,
-    };
-  }
+  const nextSession =
+    sessionList.find((session) => session.status === "active") ?? sessionList[0];
   return {
-    label: "Continue Practicing",
-    route: `/session/${sessionList[0].id}`,
+    label: "Open Practice Session",
+    route: `/session/${nextSession.id}`,
   };
 }
 
 export default function HomeScreen() {
-  const { variant } = useLocalSearchParams();
-  const sessions = variant === "mock" ? mockSessions : emptySessions;
-  const nextAction = getNextBestAction(sessions);
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
   const [profile, setProfile] = useState(() => getProfile());
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  // Refresh from the mock store whenever this screen regains focus (e.g. after editing).
+  const loadSessions = useCallback(async () => {
+    setLoading(true);
+    setErrorMessage("");
+    try {
+      setSessions(await getSessions());
+    } catch (error) {
+      setErrorMessage(getSessionErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       setProfile({ ...getProfile() });
-    }, []),
+      loadSessions();
+    }, [loadSessions]),
   );
 
   const firstName = profile.name.trim().split(" ")[0];
+  const nextAction = getNextBestAction(sessions);
+  const totalAttempts = sessions.reduce(
+    (total, session) => total + (session.attemptCount ?? 0),
+    0,
+  );
+  const ratingSum = sessions.reduce(
+    (total, session) => total + (session.ratingSum ?? 0),
+    0,
+  );
+  const averageRating = totalAttempts > 0 ? ratingSum / totalAttempts : null;
+  const displayedSessions = sessions.slice(0, 2);
+
+  if (loading && sessions.length === 0) {
+    return (
+      <ScreenContainer contentStyle={styles.emptyContent}>
+        <AppHeader />
+        <View style={styles.emptyBody}>
+          <ActivityIndicator color={colors.accent} />
+          <Text style={styles.emptyDescription}>Loading your sessions...</Text>
+        </View>
+      </ScreenContainer>
+    );
+  }
 
   if (sessions.length === 0) {
     return (
@@ -97,13 +100,16 @@ export default function HomeScreen() {
           <LogoMark size={140} />
           <Text style={styles.emptyTitle}>Ready to practise?</Text>
           <Text style={styles.emptyDescription}>
-            Create your first Practice Session and record your first
-            presentation.
+            {errorMessage
+              ? errorMessage
+              : "Create your first Practice Session and prepare your presentation."}
           </Text>
         </View>
         <PrimaryButton
-          label={nextAction.label}
-          onPress={() => router.push(nextAction.route)}
+          label={errorMessage ? "TRY AGAIN" : nextAction.label}
+          onPress={
+            errorMessage ? loadSessions : () => router.push(nextAction.route)
+          }
         />
       </ScreenContainer>
     );
@@ -152,21 +158,23 @@ export default function HomeScreen() {
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
           <Text style={styles.statLabel}>Sessions</Text>
-          <Text style={styles.statValue}>{overview.sessions}</Text>
+          <Text style={styles.statValue}>{sessions.length}</Text>
         </View>
         <View style={styles.statCard}>
           <Text style={styles.statLabel}>Attempts</Text>
-          <Text style={styles.statValue}>{overview.attempts}</Text>
+          <Text style={styles.statValue}>{totalAttempts}</Text>
         </View>
         <View style={styles.statCard}>
           <Text style={styles.statLabel}>Avg Score</Text>
-          <Text style={styles.statValue}>{overview.average}</Text>
+          <Text style={styles.statValue}>
+            {averageRating != null ? averageRating.toFixed(1) : "--"}
+          </Text>
         </View>
       </View>
 
       <Text style={styles.sectionTitle}>Continue Practicing</Text>
       <View style={styles.sessionsGrid}>
-        {sessions.map((session) => (
+        {displayedSessions.map((session) => (
           <TouchableOpacity
             key={session.id}
             style={styles.sessionCard}
@@ -176,17 +184,21 @@ export default function HomeScreen() {
             <Text style={styles.sessionTitle} numberOfLines={1}>
               {session.title}
             </Text>
-            <Text style={styles.sessionMeta}>{session.attempts} attempts</Text>
+            <Text style={styles.sessionMeta}>
+              {session.attemptCount ?? 0} attempts
+            </Text>
             <View style={styles.sessionFooter}>
               <Text style={styles.sessionScore}>
                 Latest:{" "}
                 <Text style={styles.sessionScoreValue}>
-                  {session.latestScore.toFixed(1)}
+                  {session.latestRating != null
+                    ? session.latestRating.toFixed(1)
+                    : "--"}
                 </Text>
                 <Text style={styles.sessionScoreOutOf}> / 10</Text>
               </Text>
               <View style={styles.resumePill}>
-                <Text style={styles.resumeLabel}>Resume</Text>
+                <Text style={styles.resumeLabel}>Open</Text>
               </View>
             </View>
           </TouchableOpacity>

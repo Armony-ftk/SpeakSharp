@@ -11,6 +11,7 @@ export default function ConfirmDialog({
   cancelLabel = "Cancel",
   confirmLabel,
   destructive,
+  loading = false,
   onCancel,
   onConfirm,
 }) {
@@ -49,6 +50,7 @@ export default function ConfirmDialog({
               style={styles.cancelButton}
               onPress={onCancel}
               activeOpacity={0.8}
+              disabled={loading}
             >
               <Text style={styles.cancelText}>{cancelLabel}</Text>
             </TouchableOpacity>
@@ -56,9 +58,11 @@ export default function ConfirmDialog({
               style={[
                 styles.confirmButton,
                 destructive && styles.confirmButtonDestructive,
+                loading && styles.buttonDisabled,
               ]}
               onPress={onConfirm}
               activeOpacity={0.85}
+              disabled={loading}
             >
               <Text style={styles.confirmText}>{confirmLabel}</Text>
             </TouchableOpacity>
@@ -137,6 +141,9 @@ function getStyles(colors, typography, isDark) {
     },
     confirmButtonDestructive: {
       backgroundColor: "#D92D20",
+    },
+    buttonDisabled: {
+      opacity: 0.6,
     },
     confirmText: {
       fontSize: 14,
