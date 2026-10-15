@@ -157,14 +157,7 @@ export default function AttemptFlowScreen() {
   };
   const handleAnalyse = () => setPhase("feedback");
   const handleRecordAnother = () => {
-    setElapsedSeconds(0);
-    setProcessingStep(0);
-    setTranscript(MOCK_TRANSCRIPT);
-    setSavedChanges(true);
-    setShowScoreInfo(false);
-    setReflection("");
-    setNoteSaved(false);
-    setPhase("recording");
+    router.replace(`/session/${id}/attempt`);
   };
   const handleBackToSession = () => router.back();
 

@@ -52,6 +52,8 @@ function formatDuration(seconds) {
 export default function SessionDetailsScreen() {
   const params = useLocalSearchParams();
   const id = firstParam(params.id);
+  const localRecordingSaved =
+    firstParam(params.localRecordingSaved) === "1";
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -210,10 +212,18 @@ export default function SessionDetailsScreen() {
         <Text style={styles.errorText}>{errorMessage}</Text>
       ) : null}
 
+      {localRecordingSaved ? (
+        <Text style={styles.successText}>
+          Recording saved locally and marked as pending upload.
+        </Text>
+      ) : null}
+
       <EmptyState
         icon="mic-outline"
         title="No recordings to show"
-        description="Recording attempts will appear here in the next milestone."
+        description="Record a practice attempt to get started."
+        actionLabel="RECORD AN ATTEMPT"
+        onAction={() => router.push(`/session/${id}/attempt`)}
       />
 
       <ActionSheet
@@ -347,6 +357,13 @@ function getStyles(colors, typography) {
     errorText: {
       color: "#D92D20",
       fontSize: 13,
+      lineHeight: 18,
+      marginBottom: spacing.md,
+    },
+    successText: {
+      color: colors.success,
+      fontSize: 13,
+      fontWeight: "600",
       lineHeight: 18,
       marginBottom: spacing.md,
     },

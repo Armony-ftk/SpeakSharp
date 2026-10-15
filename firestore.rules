@@ -60,6 +60,27 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
+    function validRecording(data) {
+      return data.keys().hasAll([
+          'duration',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'duration',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.duration is int
+        && data.duration > 0
+        && data.duration <= 900
+        && data.status == 'pending_upload'
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
     match /users/{uid} {
       allow read: if isOwner(uid);
       allow create: if isOwner(uid)
@@ -90,6 +111,16 @@ service cloud.firestore {
           && request.resource.data.createdAt == resource.data.createdAt
           && request.resource.data.updatedAt == request.time;
         allow delete: if false;
+
+        match /recordings/{recordingId} {
+          allow read: if isOwner(uid);
+          allow create: if isOwner(uid)
+            && exists(/databases/$(database)/documents/users/$(uid)/sessions/$(sessionId))
+            && validRecording(request.resource.data)
+            && request.resource.data.createdAt == request.time
+            && request.resource.data.updatedAt == request.time;
+          allow update, delete: if false;
+        }
       }
     }
   }
