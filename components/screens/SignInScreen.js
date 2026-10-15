@@ -1,40 +1,53 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { Link, Redirect, router } from "expo-router";
+import { Link, router } from "expo-router";
 import AuthLayout from "../ui/AuthLayout";
 import BrandTitle from "../ui/BrandTitle";
 import AuthTextField from "../ui/AuthTextField";
 import PrimaryButton from "../ui/PrimaryButton";
 import OrDivider from "../ui/OrDivider";
 import GoogleButton from "../ui/GoogleButton";
-import SplashScreen from "./SplashScreen";
 import { spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
+import {
+  getAuthErrorMessage,
+  loginWithEmail,
+} from "../../services/authService";
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function SignInScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [phase, setPhase] = useState("form");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [loading, setLoading] = useState(false);
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
 
-  useEffect(() => {
-    if (phase !== "loading") return;
-    const timer = setTimeout(() => setPhase("done"), 1200);
-    return () => clearTimeout(timer);
-  }, [phase]);
+  const handleSignIn = async () => {
+    if (loading) return;
 
-  const handleSignIn = () => {
-    setPhase("loading");
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail || !password) {
+      setErrorMessage("Enter your email address and password.");
+      return;
+    }
+
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+      setErrorMessage("Enter a valid email address.");
+      return;
+    }
+
+    setErrorMessage("");
+    setLoading(true);
+
+    try {
+      await loginWithEmail(normalizedEmail, password);
+    } catch (error) {
+      setErrorMessage(getAuthErrorMessage(error));
+      setLoading(false);
+    }
   };
-
-  if (phase === "done") {
-    return <Redirect href="/home?variant=mock" />;
-  }
-
-  if (phase === "loading") {
-    return <SplashScreen />;
-  }
 
   return (
     <AuthLayout>
@@ -48,6 +61,7 @@ export default function SignInScreen() {
         value={email}
         onChangeText={setEmail}
         keyboardType="email-address"
+        editable={!loading}
       />
       <AuthTextField
         label="Password"
@@ -56,7 +70,12 @@ export default function SignInScreen() {
         value={password}
         onChangeText={setPassword}
         secureTextEntry
+        editable={!loading}
       />
+
+      {errorMessage ? (
+        <Text style={styles.errorText}>{errorMessage}</Text>
+      ) : null}
 
       <Text
         style={styles.forgotLink}
@@ -65,10 +84,15 @@ export default function SignInScreen() {
         Forgot Password?
       </Text>
 
-      <PrimaryButton label="SIGN IN" onPress={handleSignIn} />
+      <PrimaryButton
+        label="SIGN IN"
+        loadingLabel="SIGNING IN..."
+        loading={loading}
+        onPress={handleSignIn}
+      />
 
       <OrDivider label="Or continue with" />
-      <GoogleButton onPress={() => {}} />
+      <GoogleButton onPress={() => {}} disabled />
 
       <View style={styles.footerRow}>
         <Text style={styles.footerText}>Don't have an account? </Text>
@@ -88,6 +112,13 @@ function getStyles(colors, typography) {
       letterSpacing: 0.1,
       marginTop: spacing.xs,
       marginBottom: spacing.lg,
+    },
+    errorText: {
+      color: "#D92D20",
+      fontSize: 13,
+      lineHeight: 18,
+      marginTop: -spacing.xs,
+      marginBottom: spacing.sm,
     },
     forgotLink: {
       alignSelf: "flex-end",

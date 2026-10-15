@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  Animated,
+  Easing,
   Modal,
   StyleSheet,
   Text,
@@ -88,6 +90,32 @@ export default function AttemptFlowScreen() {
   const [showDeleteRecording, setShowDeleteRecording] = useState(false);
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
+  const orbPulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (phase !== "recording") {
+      orbPulse.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(orbPulse, {
+          toValue: 1.07,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(orbPulse, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [phase, orbPulse]);
 
   useEffect(() => {
     if (phase !== "recording") return;
@@ -151,41 +179,79 @@ export default function AttemptFlowScreen() {
         >
           <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.attemptTitle}>{session.title}</Text>
-        <Text style={styles.attemptSubtitle}>Attempt {attemptNumber}</Text>
 
-        <View style={styles.recordingBody}>
-          <View style={styles.statusRow}>
-            <View
-              style={[styles.statusDot, isPaused && styles.statusDotPaused]}
-            />
-            <Text style={styles.statusLabel}>
-              {isPaused ? "PAUSED" : "RECORDING"}
-            </Text>
+        <Animated.View
+          style={[styles.orbGlow, { transform: [{ scale: orbPulse }] }]}
+        >
+          <View style={styles.orb}>
+            <View style={styles.orbWave}>
+              <Waveform
+                progress={isPaused ? 0.4 : 1}
+                color="#8EC5FF"
+                trackColor="rgba(142,197,255,0.35)"
+                animated={!isPaused}
+              />
+            </View>
           </View>
-          <Text style={styles.timer}>{formatDuration(elapsedSeconds)}</Text>
-          <Waveform progress={isPaused ? 0.4 : 1} />
+        </Animated.View>
+
+        <Text style={styles.recordingMeta}>
+          {session.title} · Attempt {attemptNumber}
+        </Text>
+        <Text style={styles.recordingHint}>
+          {isPaused
+            ? "Recording paused. Resume when you're ready."
+            : "Recording in progress. Speak clearly and take your time."}{" "}
+          Recording continues to work without internet.
+        </Text>
+
+        <View style={styles.recordingSpacer} />
+
+        <View style={styles.fullWaveform}>
+          <Waveform
+            progress={isPaused ? 0.4 : 1}
+            color={colors.accent}
+            animated={!isPaused}
+          />
         </View>
 
-        <PrimaryButton
-          label={isPaused ? "RESUME" : "PAUSE"}
-          icon={isPaused ? "play" : "pause"}
-          pill
-          onPress={() => setPhase(isPaused ? "recording" : "paused")}
-        />
-        <TouchableOpacity onPress={handleStop} style={styles.textButton}>
-          <Text style={styles.textButtonLabel}>STOP</Text>
-        </TouchableOpacity>
+        <View style={styles.controlsRow}>
+          <View style={styles.controlItem}>
+            <TouchableOpacity
+              style={styles.controlButton}
+              onPress={() => setPhase(isPaused ? "recording" : "paused")}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={isPaused ? "play" : "pause"}
+                size={20}
+                color={colors.textPrimary}
+              />
+            </TouchableOpacity>
+            <Text style={styles.controlLabel}>
+              {isPaused ? "Resume" : "Pause"}
+            </Text>
+          </View>
 
-        <View style={styles.offlineNote}>
-          <Ionicons
-            name="cloud-offline-outline"
-            size={14}
-            color={colors.textSecondary}
-          />
-          <Text style={styles.offlineNoteText}>
-            Recording continues to work without internet.
-          </Text>
+          <View style={styles.controlItem}>
+            <View style={styles.micButton}>
+              <Ionicons name="mic" size={24} color="#FFFFFF" />
+            </View>
+            <Text style={styles.controlLabel}>
+              {formatDuration(elapsedSeconds)}
+            </Text>
+          </View>
+
+          <View style={styles.controlItem}>
+            <TouchableOpacity
+              style={styles.controlButton}
+              onPress={handleStop}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="close" size={20} color="#E5484D" />
+            </TouchableOpacity>
+            <Text style={styles.controlLabel}>Stop</Text>
+          </View>
         </View>
       </ScreenContainer>
     );
@@ -492,48 +558,101 @@ function getStyles(colors, typography) {
       marginTop: spacing.lg,
       marginBottom: spacing.sm,
     },
-    attemptTitle: {
-      ...typography.heading,
-      fontSize: 18,
-      marginTop: spacing.lg,
-      textAlign: "center",
-    },
     attemptSubtitle: {
       ...typography.body,
       marginTop: spacing.xs,
       textAlign: "center",
     },
-    recordingBody: {
+    orbGlow: {
+      width: 236,
+      height: 236,
+      borderRadius: 118,
       alignItems: "center",
-      marginVertical: spacing.xl,
-      width: "100%",
+      justifyContent: "center",
+      backgroundColor: "rgba(46,107,255,0.08)",
+      borderWidth: 1,
+      borderColor: "rgba(46,107,255,0.18)",
+      marginTop: spacing.xl,
     },
-    statusRow: {
-      flexDirection: "row",
+    orb: {
+      width: 200,
+      height: 200,
+      borderRadius: 100,
+      backgroundColor: "#0B1445",
       alignItems: "center",
-      marginBottom: spacing.sm,
+      justifyContent: "center",
+      shadowColor: "#2E6BFF",
+      shadowOpacity: 0.55,
+      shadowOffset: { width: 0, height: 0 },
+      shadowRadius: 24,
+      elevation: 8,
     },
-    statusDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-      backgroundColor: "#E4351F",
-      marginRight: spacing.xs,
+    orbWave: {
+      width: 130,
     },
-    statusDotPaused: {
-      backgroundColor: colors.placeholder,
+    recordingMeta: {
+      ...typography.body,
+      textAlign: "center",
+      marginTop: spacing.lg,
     },
-    statusLabel: {
-      fontSize: 12,
-      fontWeight: "700",
-      letterSpacing: 0.6,
-      color: colors.textSecondary,
+    recordingHint: {
+      ...typography.body,
+      textAlign: "center",
+      lineHeight: 20,
+      marginTop: spacing.md,
+      paddingHorizontal: spacing.lg,
     },
-    timer: {
-      fontSize: 40,
-      fontWeight: "800",
-      color: colors.navy,
+    recordingSpacer: {
+      flexGrow: 1,
+      minHeight: spacing.xl,
+    },
+    fullWaveform: {
+      alignSelf: "stretch",
       marginBottom: spacing.lg,
+    },
+    controlsRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      justifyContent: "space-evenly",
+      alignSelf: "stretch",
+      marginBottom: spacing.md,
+    },
+    controlItem: {
+      alignItems: "center",
+      gap: spacing.sm,
+    },
+    controlButton: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.cardBorder,
+      alignItems: "center",
+      justifyContent: "center",
+      shadowColor: "#101828",
+      shadowOpacity: 0.05,
+      shadowOffset: { width: 0, height: 4 },
+      shadowRadius: 12,
+      elevation: 2,
+    },
+    micButton: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: colors.accent,
+      alignItems: "center",
+      justifyContent: "center",
+      shadowColor: "#2E6BFF",
+      shadowOpacity: 0.35,
+      shadowOffset: { width: 0, height: 4 },
+      shadowRadius: 12,
+      elevation: 4,
+    },
+    controlLabel: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: colors.textSecondary,
     },
     textButton: {
       alignItems: "center",
@@ -543,16 +662,6 @@ function getStyles(colors, typography) {
       fontSize: 13,
       fontWeight: "700",
       color: colors.textSecondary,
-    },
-    offlineNote: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginTop: spacing.lg,
-    },
-    offlineNoteText: {
-      fontSize: 12,
-      color: colors.textSecondary,
-      marginLeft: spacing.xs,
     },
     reviewCard: {
       backgroundColor: colors.card,

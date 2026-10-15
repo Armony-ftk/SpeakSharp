@@ -11,11 +11,12 @@ export default function ConfirmDialog({
   cancelLabel = "Cancel",
   confirmLabel,
   destructive,
+  loading = false,
   onCancel,
   onConfirm,
 }) {
-  const { colors, typography } = useAppTheme();
-  const styles = getStyles(colors, typography);
+  const { colors, typography, isDark } = useAppTheme();
+  const styles = getStyles(colors, typography, isDark);
 
   return (
     <Modal
@@ -49,6 +50,7 @@ export default function ConfirmDialog({
               style={styles.cancelButton}
               onPress={onCancel}
               activeOpacity={0.8}
+              disabled={loading}
             >
               <Text style={styles.cancelText}>{cancelLabel}</Text>
             </TouchableOpacity>
@@ -56,9 +58,11 @@ export default function ConfirmDialog({
               style={[
                 styles.confirmButton,
                 destructive && styles.confirmButtonDestructive,
+                loading && styles.buttonDisabled,
               ]}
               onPress={onConfirm}
               activeOpacity={0.85}
+              disabled={loading}
             >
               <Text style={styles.confirmText}>{confirmLabel}</Text>
             </TouchableOpacity>
@@ -69,20 +73,28 @@ export default function ConfirmDialog({
   );
 }
 
-function getStyles(colors, typography) {
+function getStyles(colors, typography, isDark) {
   return StyleSheet.create({
     overlay: {
       flex: 1,
-      backgroundColor: "rgba(16, 24, 40, 0.5)",
+      backgroundColor: "rgba(16, 24, 40, 0.65)",
       alignItems: "center",
       justifyContent: "center",
       padding: spacing.lg,
     },
     card: {
       width: "100%",
-      backgroundColor: colors.card,
+      // Solid surface so underlying screen content can't bleed through.
+      backgroundColor: isDark ? "#171C26" : "#FFFFFF",
+      borderWidth: 1,
+      borderColor: colors.cardBorder,
       borderRadius: radius.lg,
       padding: spacing.lg,
+      shadowColor: "#101828",
+      shadowOpacity: 0.25,
+      shadowOffset: { width: 0, height: 8 },
+      shadowRadius: 24,
+      elevation: 8,
     },
     title: {
       ...typography.heading,
@@ -129,6 +141,9 @@ function getStyles(colors, typography) {
     },
     confirmButtonDestructive: {
       backgroundColor: "#D92D20",
+    },
+    buttonDisabled: {
+      opacity: 0.6,
     },
     confirmText: {
       fontSize: 14,
