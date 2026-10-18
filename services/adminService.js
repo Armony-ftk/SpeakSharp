@@ -155,7 +155,7 @@ export async function getUsers({
   const nextIndex = startIndex + items.length;
 
   return {
-    items: items.map(({ totalSessions, totalRecordings, ...user }) => user),
+    items: items.map(({ totalRecordings, ...user }) => user),
     nextCursor: nextIndex < filteredUsers.length ? String(nextIndex) : null,
     total: filteredUsers.length,
   };
