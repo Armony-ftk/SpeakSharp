@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Animated,
   Easing,
   Modal,
@@ -20,6 +21,15 @@ import ConfirmDialog from "../ui/ConfirmDialog";
 import { getSession } from "../../constants/mockSessions";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
+import {
+  getRecording,
+  markRecordingUploaded,
+} from "../../services/recordingService";
+import {
+  getRecordingStoragePath,
+  getUploadErrorMessage,
+  uploadRecordingAudio,
+} from "../../services/audioUploadService";
 
 const PROCESSING_STEPS = [
   "Recording uploaded",
@@ -27,6 +37,10 @@ const PROCESSING_STEPS = [
   "Speaking metrics calculated",
   "Generating AI feedback",
 ];
+
+function firstParam(value) {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 const MOCK_TRANSCRIPT =
   "Good afternoon everyone.\n\nToday we are presenting our React Native application.\n\nThe application uses Firebase for authentication...";
@@ -73,15 +87,23 @@ function formatDuration(totalSeconds) {
 }
 
 export default function AttemptFlowScreen() {
-  const { id, view } = useLocalSearchParams();
-  const session = getSession(id);
+  const params = useLocalSearchParams();
+  const sessionId = firstParam(params.id);
+  const recordingId = firstParam(params.recordingId);
+  const selectedView = firstParam(params.view);
+  const session = getSession(sessionId);
   const attemptNumber = session.attempts + 1;
 
   const [phase, setPhase] = useState(
-    view === "feedback" ? "feedback" : "recording",
+    selectedView === "feedback"
+      ? "feedback"
+      : selectedView === "processing"
+        ? "processing"
+        : "recording",
   );
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [processingStep, setProcessingStep] = useState(0);
+  const [uploadState, setUploadState] = useState("pending");
+  const [uploadError, setUploadError] = useState("");
   const [transcript, setTranscript] = useState(MOCK_TRANSCRIPT);
   const [savedChanges, setSavedChanges] = useState(true);
   const [showScoreInfo, setShowScoreInfo] = useState(false);
@@ -91,6 +113,15 @@ export default function AttemptFlowScreen() {
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
   const orbPulse = useRef(new Animated.Value(1)).current;
+  const mountedRef = useRef(true);
+  const uploadInProgressRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (phase !== "recording") {
@@ -126,18 +157,54 @@ export default function AttemptFlowScreen() {
     return () => clearInterval(interval);
   }, [phase]);
 
+  const startUpload = useCallback(async () => {
+    if (uploadInProgressRef.current) return;
+
+    uploadInProgressRef.current = true;
+    if (mountedRef.current) {
+      setUploadState("uploading");
+      setUploadError("");
+    }
+
+    try {
+      const expectedStoragePath = getRecordingStoragePath(
+        sessionId,
+        recordingId,
+      );
+      const recording = await getRecording(sessionId, recordingId);
+
+      if (!recording) {
+        const error = new Error("The recording metadata could not be found.");
+        error.code = "recording/not-found";
+        throw error;
+      }
+
+      if (
+        recording.storagePath === expectedStoragePath &&
+        recording.uploadedAt
+      ) {
+        if (mountedRef.current) setUploadState("done");
+        return;
+      }
+
+      const storagePath = await uploadRecordingAudio(sessionId, recordingId);
+      await markRecordingUploaded(sessionId, recordingId, storagePath);
+
+      if (mountedRef.current) setUploadState("done");
+    } catch (error) {
+      if (mountedRef.current) {
+        setUploadState("error");
+        setUploadError(getUploadErrorMessage(error));
+      }
+    } finally {
+      uploadInProgressRef.current = false;
+    }
+  }, [recordingId, sessionId]);
+
   useEffect(() => {
     if (phase !== "processing") return;
-    if (processingStep >= PROCESSING_STEPS.length) {
-      const timeout = setTimeout(() => setPhase("transcript"), 500);
-      return () => clearTimeout(timeout);
-    }
-    const timeout = setTimeout(
-      () => setProcessingStep((prev) => prev + 1),
-      700,
-    );
-    return () => clearTimeout(timeout);
-  }, [phase, processingStep]);
+    void startUpload();
+  }, [phase, startUpload]);
 
   const wordCount = transcript.trim().split(/\s+/).filter(Boolean).length;
 
@@ -148,7 +215,6 @@ export default function AttemptFlowScreen() {
   };
   const handleDiscard = () => router.back();
   const handleUseRecording = () => {
-    setProcessingStep(0);
     setPhase("processing");
   };
   const handleTranscriptChange = (text) => {
@@ -157,7 +223,7 @@ export default function AttemptFlowScreen() {
   };
   const handleAnalyse = () => setPhase("feedback");
   const handleRecordAnother = () => {
-    router.replace(`/session/${id}/attempt`);
+    router.replace(`/session/${sessionId}/attempt`);
   };
   const handleBackToSession = () => router.back();
 
@@ -304,35 +370,59 @@ export default function AttemptFlowScreen() {
       <ScreenContainer contentStyle={styles.centeredContent}>
         <Text style={styles.processingTitle}>Analysing your presentation</Text>
         {PROCESSING_STEPS.map((step, index) => {
-          const done = index < processingStep;
-          const active = index === processingStep;
+          const isUploadStep = index === 0;
+          const done = isUploadStep && uploadState === "done";
+          const active =
+            isUploadStep &&
+            (uploadState === "pending" || uploadState === "uploading");
+          const failed = isUploadStep && uploadState === "error";
           return (
             <View key={step} style={styles.processingRow}>
-              <Ionicons
-                name={
-                  done
-                    ? "checkmark-circle"
-                    : active
-                      ? "ellipse"
-                      : "ellipse-outline"
-                }
-                size={18}
-                color={
-                  done ? colors.success : active ? colors.accent : colors.border
-                }
-              />
+              {done ? (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={20}
+                  color={colors.success}
+                />
+              ) : active ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : failed ? (
+                <Ionicons name="warning-outline" size={20} color="#D92D20" />
+              ) : (
+                <Ionicons
+                  name="ellipse-outline"
+                  size={20}
+                  color={colors.border}
+                />
+              )}
               <Text
                 style={[
                   styles.processingLabel,
                   !done && !active && styles.processingLabelPending,
+                  failed && styles.processingLabelError,
                 ]}
               >
-                {step}
+                {failed ? "Recording upload failed" : step}
               </Text>
             </View>
           );
         })}
-        <Text style={styles.processingHint}>This may take a moment...</Text>
+        {uploadState === "error" ? (
+          <>
+            <Text style={styles.uploadErrorText}>{uploadError}</Text>
+            <PrimaryButton
+              label="RETRY"
+              onPress={startUpload}
+              style={styles.retryButton}
+            />
+          </>
+        ) : (
+          <Text style={styles.processingHint}>
+            {uploadState === "done"
+              ? "Your recording is ready for the next processing phase."
+              : "This may take a moment..."}
+          </Text>
+        )}
       </ScreenContainer>
     );
   }
@@ -700,8 +790,23 @@ function getStyles(colors, typography) {
       color: colors.textSecondary,
       fontWeight: "500",
     },
+    processingLabelError: {
+      color: "#D92D20",
+      fontWeight: "600",
+    },
     processingHint: {
       ...typography.body,
+      marginTop: spacing.md,
+    },
+    uploadErrorText: {
+      ...typography.body,
+      color: "#D92D20",
+      lineHeight: 20,
+      marginTop: spacing.md,
+      textAlign: "center",
+    },
+    retryButton: {
+      alignSelf: "stretch",
       marginTop: spacing.md,
     },
     transcriptHeading: {

@@ -238,8 +238,12 @@ export default function LocalRecordingScreen() {
       }
       if (mountedRef.current) {
         router.replace({
-          pathname: "/session/[id]",
-          params: { id: sessionId, localRecordingSaved: "1" },
+          pathname: "/session/[id]/attempt",
+          params: {
+            id: sessionId,
+            recordingId,
+            view: "processing",
+          },
         });
       }
     } catch (error) {

@@ -7,6 +7,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
 import { RECORDING_STATUS } from "../constants/recordindStatuses";
@@ -116,6 +117,51 @@ export async function getRecordings(sessionId) {
     id: snapshotDocument.id,
     ...snapshotDocument.data(),
   }));
+}
+
+export async function getRecording(sessionId, recordingId) {
+  const uid = requireCurrentUid();
+  const normalizedSessionId = requireDocumentId(sessionId, "session ID");
+  const normalizedRecordingId = requireDocumentId(
+    recordingId,
+    "recording ID",
+  );
+  const snapshot = await getDoc(
+    recordingDocument(uid, normalizedSessionId, normalizedRecordingId),
+  );
+
+  return snapshot.exists()
+    ? { id: snapshot.id, ...snapshot.data() }
+    : null;
+}
+
+export async function markRecordingUploaded(
+  sessionId,
+  recordingId,
+  storagePath,
+) {
+  const uid = requireCurrentUid();
+  const normalizedSessionId = requireDocumentId(sessionId, "session ID");
+  const normalizedRecordingId = requireDocumentId(
+    recordingId,
+    "recording ID",
+  );
+  const expectedStoragePath = `users/${uid}/sessions/${normalizedSessionId}/recordings/${normalizedRecordingId}.m4a`;
+
+  if (storagePath !== expectedStoragePath) {
+    const error = new Error("The recording Storage path is invalid.");
+    error.code = "recording/invalid-storage-path";
+    throw error;
+  }
+
+  await updateDoc(
+    recordingDocument(uid, normalizedSessionId, normalizedRecordingId),
+    {
+      storagePath,
+      uploadedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+  );
 }
 
 export function getRecordingErrorMessage(error) {

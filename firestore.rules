@@ -60,14 +60,8 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
-    function validRecording(data) {
+    function validRecordingCore(data) {
       return data.keys().hasAll([
-          'duration',
-          'status',
-          'createdAt',
-          'updatedAt'
-        ])
-        && data.keys().hasOnly([
           'duration',
           'status',
           'createdAt',
@@ -79,6 +73,39 @@ service cloud.firestore {
         && data.status == 'pending_upload'
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
+    }
+
+    function validNewRecording(data) {
+      return validRecordingCore(data)
+        && data.keys().hasOnly([
+          'duration',
+          'status',
+          'createdAt',
+          'updatedAt'
+        ]);
+    }
+
+    function validUploadedRecording(data, oldData, uid, sessionId, recordingId) {
+      return validRecordingCore(data)
+        && !('storagePath' in oldData)
+        && !('uploadedAt' in oldData)
+        && data.keys().hasAll(['storagePath', 'uploadedAt'])
+        && data.keys().hasOnly([
+          'duration',
+          'status',
+          'storagePath',
+          'uploadedAt',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.duration == oldData.duration
+        && data.status == oldData.status
+        && data.createdAt == oldData.createdAt
+        && data.storagePath == 'users/' + uid
+          + '/sessions/' + sessionId
+          + '/recordings/' + recordingId + '.m4a'
+        && data.uploadedAt == request.time
+        && data.updatedAt == request.time;
     }
 
     match /users/{uid} {
@@ -116,10 +143,18 @@ service cloud.firestore {
           allow read: if isOwner(uid);
           allow create: if isOwner(uid)
             && exists(/databases/$(database)/documents/users/$(uid)/sessions/$(sessionId))
-            && validRecording(request.resource.data)
+            && validNewRecording(request.resource.data)
             && request.resource.data.createdAt == request.time
             && request.resource.data.updatedAt == request.time;
-          allow update, delete: if false;
+          allow update: if isOwner(uid)
+            && validUploadedRecording(
+              request.resource.data,
+              resource.data,
+              uid,
+              sessionId,
+              recordingId
+            );
+          allow delete: if false;
         }
       }
     }
