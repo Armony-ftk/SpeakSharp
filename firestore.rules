@@ -60,50 +60,56 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
-    function validRecordingCore(data) {
+    function sessionAvailable(uid, sessionId) {
+      return exists(/databases/$(database)/documents/users/$(uid)/sessions/$(sessionId))
+        && !get(/databases/$(database)/documents/users/$(uid)/sessions/$(sessionId)).data.get('deleting', false);
+    }
+
+    function canonicalAudioPath(uid, sessionId, recordingId) {
+      return 'recordings/' + uid + '/' + sessionId + '/' + recordingId + '.m4a';
+    }
+
+    function legacyAudioPath(uid, sessionId, recordingId) {
+      return 'users/' + uid + '/sessions/' + sessionId + '/recordings/' + recordingId + '.m4a';
+    }
+
+    function validNewRecording(data, uid, sessionId, recordingId) {
       return data.keys().hasAll([
-          'duration',
-          'status',
-          'createdAt',
-          'updatedAt'
+          'userId', 'sessionId', 'audioPath', 'durationSeconds',
+          'processingStatus', 'createdAt', 'updatedAt'
         ])
-        && data.duration is int
-        && data.duration > 0
-        && data.duration <= 900
-        && data.status == 'pending_upload'
-        && data.createdAt is timestamp
-        && data.updatedAt is timestamp;
+        && data.keys().hasOnly([
+          'userId', 'sessionId', 'audioPath', 'durationSeconds',
+          'processingStatus', 'createdAt', 'updatedAt'
+        ])
+        && data.userId == uid && data.sessionId == sessionId
+        && data.audioPath == canonicalAudioPath(uid, sessionId, recordingId)
+        && data.durationSeconds is int
+        && data.durationSeconds > 0 && data.durationSeconds <= 900
+        && data.processingStatus == 'pending_upload';
     }
 
-    function validNewRecording(data) {
-      return validRecordingCore(data)
-        && data.keys().hasOnly([
-          'duration',
-          'status',
-          'createdAt',
-          'updatedAt'
-        ]);
+    function validLegacyPreparation(data, oldData, uid, sessionId, recordingId) {
+      return !('processingStatus' in oldData) && oldData.status == 'pending_upload'
+        && !data.keys().hasAny(['status', 'storagePath', 'duration'])
+        && data.diff(oldData).affectedKeys().hasOnly([
+          'userId', 'sessionId', 'audioPath', 'durationSeconds', 'processingStatus',
+          'status', 'storagePath', 'duration', 'updatedAt'
+        ])
+        && data.userId == uid && data.sessionId == sessionId
+        && data.durationSeconds == oldData.duration
+        && data.durationSeconds is int
+        && data.durationSeconds > 0 && data.durationSeconds <= 900
+        && data.processingStatus == 'pending_upload'
+        && data.audioPath == legacyAudioPath(uid, sessionId, recordingId)
+        && oldData.get('storagePath', data.audioPath) == data.audioPath
+        && data.updatedAt == request.time;
     }
 
-    function validUploadedRecording(data, oldData, uid, sessionId, recordingId) {
-      return validRecordingCore(data)
-        && !('storagePath' in oldData)
-        && !('uploadedAt' in oldData)
-        && data.keys().hasAll(['storagePath', 'uploadedAt'])
-        && data.keys().hasOnly([
-          'duration',
-          'status',
-          'storagePath',
-          'uploadedAt',
-          'createdAt',
-          'updatedAt'
-        ])
-        && data.duration == oldData.duration
-        && data.status == oldData.status
-        && data.createdAt == oldData.createdAt
-        && data.storagePath == 'users/' + uid
-          + '/sessions/' + sessionId
-          + '/recordings/' + recordingId + '.m4a'
+    function validUploadReceipt(data, oldData) {
+      // The function may already have progressed; only upload timestamps are client-writable.
+      return 'audioPath' in oldData && 'processingStatus' in oldData
+        && data.diff(oldData).affectedKeys().hasOnly(['uploadedAt', 'updatedAt'])
         && data.uploadedAt == request.time
         && data.updatedAt == request.time;
     }
@@ -130,6 +136,7 @@ service cloud.firestore {
           && request.resource.data.createdAt == request.time
           && request.resource.data.updatedAt == request.time;
         allow update: if isOwner(uid)
+          && !resource.data.get('deleting', false)
           && validSession(request.resource.data)
           && request.resource.data.attemptCount == resource.data.attemptCount
           && request.resource.data.latestRating == resource.data.latestRating
@@ -142,18 +149,20 @@ service cloud.firestore {
         match /recordings/{recordingId} {
           allow read: if isOwner(uid);
           allow create: if isOwner(uid)
-            && exists(/databases/$(database)/documents/users/$(uid)/sessions/$(sessionId))
-            && validNewRecording(request.resource.data)
+            && sessionAvailable(uid, sessionId)
+            && validNewRecording(request.resource.data, uid, sessionId, recordingId)
             && request.resource.data.createdAt == request.time
             && request.resource.data.updatedAt == request.time;
           allow update: if isOwner(uid)
-            && validUploadedRecording(
+            && sessionAvailable(uid, sessionId)
+            && (validUploadReceipt(request.resource.data, resource.data)
+            || validLegacyPreparation(
               request.resource.data,
               resource.data,
               uid,
               sessionId,
               recordingId
-            );
+            ));
           allow delete: if false;
         }
       }

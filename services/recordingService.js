@@ -1,17 +1,31 @@
 import {
   collection,
   doc,
+  deleteField,
   getDoc,
   getDocs,
   orderBy,
+  onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
 } from "firebase/firestore";
 import { auth, db } from "../config/firebase";
 import { RECORDING_STATUS } from "../constants/recordindStatuses";
-import { MAX_RECORDING_SECONDS } from "../constants/recording";
+import { MAX_RECORDING_SECONDS, recordingAudioPath } from "../constants/recording";
+
+function normalizeRecording(snapshot) {
+  const { status, storagePath, duration, ...data } = snapshot.data();
+  return {
+    id: snapshot.id,
+    ...data,
+    processingStatus: data.processingStatus ?? status,
+    audioPath: data.audioPath ?? storagePath,
+    durationSeconds: data.durationSeconds ?? duration,
+  };
+}
 
 function requireCurrentUid() {
   const uid = auth.currentUser?.uid;
@@ -83,10 +97,10 @@ export async function createRecording(sessionId, recordingId, recordingData) {
 
   const existing = await getDoc(reference);
   if (existing.exists()) {
-    const data = existing.data();
+    const data = normalizeRecording(existing);
     if (
-      data.status === RECORDING_STATUS.PENDING_UPLOAD &&
-      data.duration === duration
+      data.processingStatus === RECORDING_STATUS.PENDING_UPLOAD &&
+      data.durationSeconds === duration
     ) {
       return normalizedRecordingId;
     }
@@ -96,8 +110,11 @@ export async function createRecording(sessionId, recordingId, recordingData) {
   }
 
   await setDoc(reference, {
-    duration,
-    status: RECORDING_STATUS.PENDING_UPLOAD,
+    userId: uid,
+    sessionId: normalizedSessionId,
+    audioPath: recordingAudioPath(uid, normalizedSessionId, normalizedRecordingId),
+    durationSeconds: duration,
+    processingStatus: RECORDING_STATUS.PENDING_UPLOAD,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -113,10 +130,7 @@ export async function getRecordings(sessionId) {
       orderBy("createdAt", "desc"),
     ),
   );
-  return snapshot.docs.map((snapshotDocument) => ({
-    id: snapshotDocument.id,
-    ...snapshotDocument.data(),
-  }));
+  return snapshot.docs.map(normalizeRecording);
 }
 
 export async function getRecording(sessionId, recordingId) {
@@ -131,8 +145,50 @@ export async function getRecording(sessionId, recordingId) {
   );
 
   return snapshot.exists()
-    ? { id: snapshot.id, ...snapshot.data() }
+    ? normalizeRecording(snapshot)
     : null;
+}
+
+export function subscribeToRecording(sessionId, recordingId, onChange, onError) {
+  const reference = recordingDocument(
+    requireCurrentUid(),
+    requireDocumentId(sessionId, "session ID"),
+    requireDocumentId(recordingId, "recording ID"),
+  );
+  return onSnapshot(reference, (snapshot) => {
+    onChange(snapshot.exists() ? normalizeRecording(snapshot) : null);
+  }, onError);
+}
+
+export async function prepareRecordingUpload(sessionId, recordingId) {
+  const uid = requireCurrentUid();
+  const sid = requireDocumentId(sessionId, "session ID");
+  const rid = requireDocumentId(recordingId, "recording ID");
+  const reference = recordingDocument(uid, sid, rid);
+  return runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    if (!snapshot.exists()) throw new Error("The recording no longer exists.");
+    const data = normalizeRecording(snapshot);
+    if (![RECORDING_STATUS.PENDING_UPLOAD, RECORDING_STATUS.FAILED].includes(data.processingStatus)) {
+      throw new Error("This recording has already started processing.");
+    }
+    const raw = snapshot.data();
+    const audioPath = data.audioPath ?? recordingAudioPath(uid, sid, rid, true);
+    if (![recordingAudioPath(uid, sid, rid), recordingAudioPath(uid, sid, rid, true)].includes(audioPath)) {
+      throw new Error("The recording audio path is invalid.");
+    }
+    if (!raw.processingStatus) {
+      // Upgrade only this legacy pending recording when the user resumes its upload.
+      transaction.update(reference, {
+        userId: uid, sessionId: sid, audioPath,
+        durationSeconds: requireDuration(data.durationSeconds),
+        processingStatus: data.processingStatus,
+        status: deleteField(), storagePath: deleteField(), duration: deleteField(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+    return audioPath;
+  });
 }
 
 export async function markRecordingUploaded(
@@ -146,9 +202,9 @@ export async function markRecordingUploaded(
     recordingId,
     "recording ID",
   );
-  const expectedStoragePath = `users/${uid}/sessions/${normalizedSessionId}/recordings/${normalizedRecordingId}.m4a`;
-
-  if (storagePath !== expectedStoragePath) {
+  if (![false, true].some((legacy) => storagePath === recordingAudioPath(
+    uid, normalizedSessionId, normalizedRecordingId, legacy,
+  ))) {
     const error = new Error("The recording Storage path is invalid.");
     error.code = "recording/invalid-storage-path";
     throw error;
@@ -157,11 +213,26 @@ export async function markRecordingUploaded(
   await updateDoc(
     recordingDocument(uid, normalizedSessionId, normalizedRecordingId),
     {
-      storagePath,
       uploadedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     },
   );
+}
+
+export function getTranscriptionErrorMessage(code) {
+  const messages = {
+    no_speech: "No speech was detected. Your audio is safe; try recording a new attempt with clear speech.",
+    provider_rate_limit: "Transcription is busy. Your audio is safe; please retry later.",
+    provider_credits: "Transcription is temporarily unavailable. Please ask the project administrator to check the provider account.",
+    provider_auth: "Transcription is not configured correctly. Please contact the project administrator.",
+    secret_missing: "Transcription is not configured correctly. Please contact the project administrator.",
+    invalid_duration: "The recording must be between 1 second and 15 minutes.",
+    invalid_audio_duration: "The audio duration is outside the supported 15-minute limit.",
+    invalid_audio_size: "The audio file is empty or exceeds the 32 MB limit.",
+    invalid_audio: "The audio could not be transcribed. Your saved recording has been kept.",
+    audio_missing: "The uploaded audio could not be found. Retry to upload the saved recording again.",
+  };
+  return messages[code] ?? "Transcription failed. Your audio is safe; please check your connection and retry later.";
 }
 
 export function getRecordingErrorMessage(error) {

@@ -2,6 +2,8 @@ import { File } from "expo-file-system";
 import { ref, uploadBytes } from "firebase/storage";
 import { auth, storage } from "../config/firebase";
 import { getLocalRecordingUri } from "../storage/audioStorage";
+import { prepareRecordingUpload } from "./recordingService";
+import { recordingAudioPath } from "../constants/recording";
 
 function requireCurrentUid() {
   const uid = auth.currentUser?.uid;
@@ -30,7 +32,7 @@ export function getRecordingStoragePath(sessionId, recordingId) {
     "recording ID",
   );
 
-  return `users/${uid}/sessions/${normalizedSessionId}/recordings/${normalizedRecordingId}.m4a`;
+  return recordingAudioPath(uid, normalizedSessionId, normalizedRecordingId);
 }
 
 function readNativeFileBlob(localUri) {
@@ -62,7 +64,6 @@ function readNativeFileBlob(localUri) {
 }
 
 export async function uploadRecordingAudio(sessionId, recordingId) {
-  const storagePath = getRecordingStoragePath(sessionId, recordingId);
   const localUri = await getLocalRecordingUri(recordingId);
 
   if (!localUri) {
@@ -79,9 +80,14 @@ export async function uploadRecordingAudio(sessionId, recordingId) {
     throw error;
   }
 
+  // Commit the expected path before Storage can publish the finalized event.
+  const storagePath = await prepareRecordingUpload(sessionId, recordingId);
   const audioBytes = await localFile.bytes();
   const storageRef = ref(storage, storagePath);
-  const metadata = { contentType: "audio/mp4" };
+  const metadata = {
+    contentType: "audio/mp4",
+    customMetadata: { recordingId: recordingId.trim() },
+  };
 
   try {
     await uploadBytes(storageRef, audioBytes, metadata);
