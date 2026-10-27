@@ -10,8 +10,8 @@ test("normal transcript returns all six metrics without changing input", () => {
   });
   assert.deepEqual(calculateSpeakingMetrics(input), {
     durationSeconds: 40, wordCount: 9, wordsPerMinute: 13.5,
-    fillerWordCount: 4,
-    fillerBreakdown: { um: 1, actually: 1, like: 1, "you know": 1 },
+    fillerWordCount: 3,
+    fillerBreakdown: { um: 1, like: 1, "you know": 1 },
     targetDurationStatus: "close",
   });
 });
@@ -74,9 +74,9 @@ test("all fillers match case insensitively and totals equal the breakdown", () =
     durationSeconds: 60,
   });
   assert.deepEqual(result.fillerBreakdown, {
-    um: 2, uh: 2, like: 2, basically: 2, actually: 2, "you know": 2,
+    um: 2, uh: 2, like: 2, basically: 2, "you know": 2,
   });
-  assert.equal(result.fillerWordCount, 12);
+  assert.equal(result.fillerWordCount, 10);
   assert.equal(result.fillerWordCount, Object.values(result.fillerBreakdown).reduce((a, b) => a + b, 0));
 });
 

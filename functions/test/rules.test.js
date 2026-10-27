@@ -133,6 +133,7 @@ test("unchanged owner session CRUD remains allowed outside deletion", async () =
 test("real Firestore transactions deduplicate concurrent mocked transcription events", async () => {
   const { createTranscriptionProcessor } = require("../transcriptionProcessor");
   const f = await setup(); await setDoc(f.reference, f.data);
+  await adminDb.doc(f.path).update({ "metrics.uniqueWords": 4, "metrics.custom": "keep" });
   const audio = Buffer.from("0000ftypM4A ");
   let requests = 0;
   const process = createTranscriptionProcessor({
@@ -152,6 +153,15 @@ test("real Firestore transactions deduplicate concurrent mocked transcription ev
   assert.equal(requests, 1);
   assert.equal(saved.processingStatus, "transcript_ready");
   assert.equal(saved.transcript.originalText, "Um, a real transaction test.");
+  assert.deepEqual(saved.metrics, {
+    uniqueWords: 4, custom: "keep", wordCount: 5, wordsPerMinute: 0.3,
+    fillerCount: 1, fillerWords: { um: 1 }, targetDurationStatus: null,
+  });
+  assert.equal(saved.durationSeconds, 900);
+  const version = (await adminDb.doc(f.path).get()).updateTime;
+  await process(event);
+  assert.ok(version.isEqual((await adminDb.doc(f.path).get()).updateTime));
+  await denied(updateDoc(f.reference, { "metrics.wordCount": 999 }));
 });
 
 test("existing callable authentication and cascade remove both audio layouts and child documents", async () => {

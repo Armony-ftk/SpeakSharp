@@ -31,7 +31,7 @@ const RECORDING_LABELS = {
   transcript_ready: "Transcript ready",
   analysing: "Analysing",
   completed: "Completed",
-  failed: "Transcription failed",
+  failed: "Processing failed",
 };
 
 function firstParam(value) {

@@ -11,10 +11,11 @@ import {
   getRecording, markRecordingUploaded, subscribeToRecording, getTranscriptionErrorMessage,
 } from "../../services/recordingService";
 import { getUploadErrorMessage, uploadRecordingAudio } from "../../services/audioUploadService";
+import { getMetricsProgress, hasSavedTranscript } from "../../utils/metricsProgress";
 
 const PROCESSING_STEPS = [
   "Recording uploaded", "Transcript generated",
-  "Speaking metrics unavailable", "AI feedback unavailable",
+  "Speaking metrics calculated", "AI feedback not started",
 ];
 
 function firstParam(value) {
@@ -73,7 +74,7 @@ function RecordingProcessing({ sessionId, recordingId }) {
       const current = await getRecording(sessionId, recordingId);
       if (!current) throw new Error("The recording no longer exists.");
       const eligible = [RECORDING_STATUS.PENDING_UPLOAD, RECORDING_STATUS.FAILED].includes(current.processingStatus);
-      if (!eligible || (current.uploadedAt && !retryProcessing)) {
+      if (!eligible || hasSavedTranscript(current) || (current.uploadedAt && !retryProcessing)) {
         if (mountedRef.current) setUploadState("done");
         return;
       }
@@ -93,11 +94,13 @@ function RecordingProcessing({ sessionId, recordingId }) {
   useEffect(() => { void startUpload(); }, [startUpload]);
 
   const status = recording?.processingStatus;
-  const transcriptReady = [RECORDING_STATUS.TRANSCRIPT_READY, RECORDING_STATUS.ANALYSING, RECORDING_STATUS.COMPLETED].includes(status)
-    && Boolean(recording?.transcript?.originalText?.trim());
+  const metricsProgress = getMetricsProgress(recording);
+  const transcriptReady = hasSavedTranscript(recording)
+    && ([RECORDING_STATUS.TRANSCRIPT_READY, RECORDING_STATUS.ANALYSING, RECORDING_STATUS.COMPLETED].includes(status)
+      || metricsProgress.failed);
   const failed = status === RECORDING_STATUS.FAILED;
   const waiting = status === RECORDING_STATUS.PENDING_UPLOAD && uploadState === "done";
-  const canRetryProcessing = failed || waiting;
+  const canRetryProcessing = (failed || waiting) && !hasSavedTranscript(recording) && !metricsProgress.failed;
   const goBack = () => router.replace({ pathname: "/session/[id]", params: { id: sessionId } });
 
   return (
@@ -106,20 +109,24 @@ function RecordingProcessing({ sessionId, recordingId }) {
         <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
       </TouchableOpacity>
       <Text style={styles.processingTitle}>
-        {transcriptReady ? "Transcription complete" : "Processing your recording"}
+        {metricsProgress.ready ? "Speaking metrics ready" : transcriptReady ? "Transcription complete" : "Processing your recording"}
       </Text>
       {PROCESSING_STEPS.map((step, index) => {
-        const done = index === 0 ? uploadState === "done" : index === 1 && transcriptReady;
+        const done = index === 0 ? uploadState === "done" : index === 1 ? transcriptReady : index === 2 && metricsProgress.ready;
         const active = !listenerError && (index === 0
           ? uploadState === "pending" || uploadState === "uploading"
-          : index === 1 && status === RECORDING_STATUS.TRANSCRIBING);
-        const stepFailed = index === 0 ? uploadState === "error" : index === 1 && failed;
+          : index === 1 ? status === RECORDING_STATUS.TRANSCRIBING : index === 2 && metricsProgress.active);
+        const stepFailed = index === 0 ? uploadState === "error"
+          : index === 1 ? failed && !metricsProgress.failed : index === 2 && metricsProgress.failed;
         let label = step;
         if (index === 0 && active) label = "Uploading recording";
         if (index === 0 && stepFailed) label = "Recording upload failed";
         if (index === 1 && active) label = "Generating transcription";
         if (index === 1 && waiting) label = "Waiting for transcription";
         if (index === 1 && stepFailed) label = "Transcription failed";
+        if (index === 2 && !done) label = "Waiting for speaking metrics";
+        if (index === 2 && active) label = "Calculating metrics";
+        if (index === 2 && stepFailed) label = "Speaking metrics failed";
         return (
           <View key={step} style={styles.processingRow}>
             {done ? <Ionicons name="checkmark-circle" size={20} color={colors.success} />
@@ -143,10 +150,13 @@ function RecordingProcessing({ sessionId, recordingId }) {
           <PrimaryButton label="RETRY UPLOAD" onPress={() => startUpload(canRetryProcessing)} style={styles.retryButton} />
         </>
       ) : failed ? (
-        <Text style={styles.uploadErrorText}>{getTranscriptionErrorMessage(recording.processingError?.code)}</Text>
+        <Text style={styles.uploadErrorText}>{metricsProgress.failed
+          ? "Speaking metrics could not be saved. Your transcript and audio are safe. Please contact the project administrator."
+          : getTranscriptionErrorMessage(recording.processingError?.code)}</Text>
       ) : (
         <Text style={styles.processingHint}>
-          {transcriptReady ? "Your transcript is saved. Speaking metrics and AI feedback are not available yet."
+          {metricsProgress.ready ? "Your transcript and speaking metrics are saved. AI feedback is not available yet."
+            : transcriptReady ? "Your transcript is saved. Speaking metrics are being calculated."
             : waiting ? "Your upload is complete. Waiting for the transcription service. You can leave this screen and return later."
               : "This may take a moment. Your saved recording will be kept."}
         </Text>

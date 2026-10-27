@@ -1,4 +1,5 @@
 const { FieldValue } = require("firebase-admin/firestore");
+const { calculateSpeakingMetrics } = require("./speakingMetrics");
 
 const MAX_AUDIO_BYTES = 32 * 1024 * 1024;
 const MAX_DURATION_SECONDS = 900;
@@ -60,6 +61,8 @@ function extractTranscript(response) {
 }
 
 function safeErrorCode(error, stage) {
+  if (stage === "metrics") return "metrics_calculation_failed";
+  if (stage === "metrics_saving") return "database_unavailable";
   if (error?.processingCode) return error.processingCode;
   if (["saving", "claim", "checking"].includes(stage)) return "database_unavailable";
   if (stage === "download") return Number(error?.code) === 404 ? "audio_missing" : "audio_unavailable";
@@ -79,7 +82,8 @@ function ownsRecording(data, ids, name) {
 }
 
 // Dependencies are injected so the actual event handler can be tested without cloud calls.
-function createTranscriptionProcessor({ db, bucketName, downloadAudio, transcribe, logger }) {
+function createTranscriptionProcessor({ db, bucketName, downloadAudio, transcribe, logger,
+  calculateMetrics = calculateSpeakingMetrics }) {
   return async (event) => {
     const object = event.data;
     const ids = parseRecordingPath(object?.name);
@@ -91,17 +95,18 @@ function createTranscriptionProcessor({ db, bucketName, downloadAudio, transcrib
     let stage = "claim";
     let claimed = false;
 
-    async function finish(updates) {
+    async function finish(updates, expectedStatus = "transcribing") {
       return db.runTransaction(async (transaction) => {
         const session = await transaction.get(sessionRef);
         const recording = await transaction.get(recordingRef);
         const data = recording.data();
         if (!session.exists || session.data().deleting || !recording.exists
           || !ownsRecording(data, ids, object.name)
-          || data.processingStatus !== "transcribing"
+          || data.processingStatus !== expectedStatus
           || data.transcriptionJob?.generation !== generation) return false;
         // update, never set: deletion must not resurrect a recording.
-        transaction.update(recordingRef, { ...updates, updatedAt: FieldValue.serverTimestamp() });
+        const fields = typeof updates === "function" ? updates(data, session.data()) : updates;
+        transaction.update(recordingRef, { ...fields, updatedAt: FieldValue.serverTimestamp() });
         return true;
       });
     }
@@ -164,16 +169,42 @@ function createTranscriptionProcessor({ db, bucketName, downloadAudio, transcrib
         processingError: FieldValue.delete(),
         transcribedAt: FieldValue.serverTimestamp(),
       });
-      if (saved) logger.info("Recording transcription ready", { recordingId: ids.recordingId, generation });
+      if (!saved) return;
+      logger.info("Recording transcription ready", { recordingId: ids.recordingId, generation });
+
+      // The transcript is already committed. Metrics failure must not discard it.
+      stage = "metrics_saving";
+      const metricsSaved = await finish((data, sessionData) => {
+        stage = "metrics";
+        const metrics = calculateMetrics({
+          originalText: data.transcript.originalText,
+          durationSeconds: data.durationSeconds,
+          targetDurationSeconds: sessionData.targetDurationSeconds,
+        });
+        stage = "metrics_saving";
+        return {
+          "metrics.wordCount": metrics.wordCount,
+          "metrics.wordsPerMinute": metrics.wordsPerMinute,
+          "metrics.fillerCount": metrics.fillerWordCount,
+          "metrics.fillerWords": metrics.fillerBreakdown,
+          "metrics.targetDurationStatus": metrics.targetDurationStatus,
+          processingError: FieldValue.delete(),
+        };
+      }, "transcript_ready");
+      if (metricsSaved) logger.info("Recording metrics ready", { recordingId: ids.recordingId, generation });
     } catch (error) {
       const code = safeErrorCode(error, stage);
-      logger.warn("Recording transcription failed", { recordingId: ids.recordingId, generation, stage, code });
+      const metricsFailed = stage === "metrics" || stage === "metrics_saving";
+      logger.warn(metricsFailed ? "Recording metrics failed" : "Recording transcription failed", {
+        recordingId: ids.recordingId, generation, stage, code,
+      });
       if (!claimed) return; // A failed claim must never overwrite a different worker's claim.
       try {
-        await finish({ processingStatus: "failed", processingError: { stage, code } });
+        await finish({ processingStatus: "failed", processingError: { stage, code } },
+          metricsFailed ? "transcript_ready" : "transcribing");
       } catch {
         // No external retry: a database outage must not cause another paid request.
-        logger.error("Could not persist transcription failure", {
+        logger.error(metricsFailed ? "Could not persist metrics failure" : "Could not persist transcription failure", {
           recordingId: ids.recordingId, generation, code: "database_unavailable",
         });
       }

@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const { FieldValue } = require("firebase-admin/firestore");
 const { createTranscriptionProcessor, extractTranscript, processingError, MAX_AUDIO_BYTES } = require("../transcriptionProcessor");
 const { transcribe } = require("../transcription");
+const { calculateSpeakingMetrics } = require("../speakingMetrics");
 
 const bucketName = "speaksharp-3893c.firebasestorage.app";
 const sessionPath = "users/owner/sessions/session";
@@ -31,7 +32,7 @@ function fixture(overrides = {}) {
     path, get: async () => snapshot(path),
     collection: (name) => ({ doc: (id) => reference(`${path}/${name}/${id}`) }),
   });
-  const state = { calls: 0, downloads: 0, failSuccessWrite: false, failAllWrites: false, logs: [] };
+  const state = { calls: 0, downloads: 0, failSuccessWrite: false, failAllWrites: false, logs: [], writes: [] };
   let queue = Promise.resolve();
   const db = {
     doc: reference,
@@ -43,7 +44,8 @@ function fixture(overrides = {}) {
           update: (ref, updates) => writes.push([ref.path, updates]),
         });
         for (const [path, updates] of writes) {
-          if (state.failAllWrites || (state.failSuccessWrite && updates.processingStatus === "transcript_ready")) {
+          if (state.failAllWrites || (state.failSuccessWrite && updates.processingStatus === "transcript_ready")
+            || (state.failMetricsWrite && Object.hasOwn(updates, "metrics.wordCount"))) {
             throw new Error("Mock Firestore unavailable");
           }
           assert.ok(documents.has(path), "update cannot recreate a deleted document");
@@ -52,8 +54,11 @@ function fixture(overrides = {}) {
             if (value?.isEqual?.(FieldValue.delete())) delete data[key];
             else if (value?.isEqual?.(FieldValue.serverTimestamp())) data[key] = "server-time";
             else if (key === "transcriptionJob") data[key] = { generation: value.generation, startedAt: "server-time" };
+            else if (key.startsWith("metrics.")) (data.metrics ??= {})[key.slice(8)] = structuredClone(value);
             else data[key] = structuredClone(value);
           }
+          state.writes.push({ path, data: structuredClone(data) });
+          if (updates.transcript && state.afterTranscriptSaved) state.afterTranscriptSaved();
         }
         return value;
       });
@@ -89,7 +94,13 @@ test("success claims before API call, preserves fields, and saves transcript/sta
   assert.equal(f.data().createdAt, "original");
   assert.equal(f.data().transcribedAt, "server-time");
   assert.equal(f.data().status, undefined);
-  assert.equal(f.data().metrics, undefined);
+  assert.deepEqual(f.data().metrics, {
+    wordCount: 5, wordsPerMinute: 25, fillerCount: 1, fillerWords: { um: 1 }, targetDurationStatus: null,
+  });
+  assert.equal(f.data().durationSeconds, 12);
+  assert.ok(f.state.writes.every(({ path }) => path === recordingPath));
+  assert.deepEqual(f.state.writes.map(({ data }) => data.processingStatus), ["transcribing", "transcript_ready", "transcript_ready"]);
+  assert.equal(f.state.writes[1].data.metrics, undefined);
 });
 
 test("concurrent and repeated events ordinarily make only one paid request", async () => {
@@ -97,6 +108,113 @@ test("concurrent and repeated events ordinarily make only one paid request", asy
   await Promise.all([f.run(), f.run(), f.run()]);
   await f.run();
   assert.equal(f.state.calls, 1);
+  assert.equal(f.state.writes.length, 3);
+  assert.equal(f.data().metrics.wordCount, 5);
+});
+
+test("metrics use persisted transcript, recording duration and current optional session target", async () => {
+  const f = fixture({ metrics: { uniqueWords: 4, pauses: [1], custom: "keep", fillerWords: { uh: 99 } } });
+  const siblingPath = `${sessionPath}/recordings/sibling`;
+  f.documents.set(siblingPath, { metrics: { wordCount: 99 } });
+  let calculations = 0;
+  f.state.afterTranscriptSaved = () => { f.documents.get(sessionPath).targetDurationSeconds = 12; };
+  f.dependencies.calculateMetrics = (input) => {
+    calculations++;
+    assert.deepEqual(input, { originalText: f.data().transcript.originalText, durationSeconds: 12, targetDurationSeconds: 12 });
+    assert.equal(f.data().processingStatus, "transcript_ready");
+    return calculateSpeakingMetrics(input);
+  };
+  await f.run();
+  assert.equal(calculations, 1);
+  assert.deepEqual(f.data().metrics, {
+    uniqueWords: 4, pauses: [1], custom: "keep", wordCount: 5, wordsPerMinute: 25,
+    fillerCount: 1, fillerWords: { um: 1 }, targetDurationStatus: "close",
+  });
+  assert.deepEqual(f.documents.get(siblingPath), { metrics: { wordCount: 99 } });
+  const saved = structuredClone(f.data());
+  f.event.data.generation = "124";
+  await f.run();
+  assert.equal(calculations, 1);
+  assert.equal(f.state.calls, 1);
+  assert.deepEqual(f.data(), saved);
+});
+
+test("calculator failure preserves transcript, audio and previous metrics without retranscription", async () => {
+  const f = fixture({ metrics: { uniqueWords: 4 } });
+  f.dependencies.calculateMetrics = () => { throw new Error("PRIVATE TRANSCRIPT CONTENT"); };
+  await f.run();
+  assert.equal(f.data().processingStatus, "failed");
+  assert.deepEqual(f.data().processingError, { stage: "metrics", code: "metrics_calculation_failed" });
+  assert.deepEqual(f.data().transcript, f.state.writes[1].data.transcript);
+  assert.equal(f.data().audioPath, f.event.data.name);
+  assert.equal(f.data().durationSeconds, 12);
+  assert.deepEqual(f.data().metrics, { uniqueWords: 4 });
+  assert.ok(!JSON.stringify(f.state.logs).includes("PRIVATE"));
+  await f.run();
+  f.event.data.generation = "124";
+  await f.run();
+  assert.equal(f.state.calls, 1);
+  assert.equal(f.state.downloads, 1);
+});
+
+test("metrics persistence failure never produces UI completion and retains the successful transcript", async () => {
+  const { getMetricsProgress } = await import("../../utils/metricsProgress.js");
+  const f = fixture();
+  f.state.failMetricsWrite = true;
+  await f.run();
+  assert.equal(f.data().processingStatus, "failed");
+  assert.deepEqual(f.data().processingError, { stage: "metrics_saving", code: "database_unavailable" });
+  assert.deepEqual(f.data().transcript, f.state.writes[1].data.transcript);
+  assert.equal(f.data().metrics, undefined);
+  assert.ok(f.state.writes.every(({ data }) => !getMetricsProgress(data).ready));
+  assert.deepEqual(getMetricsProgress(f.data()), { ready: false, active: false, failed: true });
+  await f.run();
+  f.event.data.generation = "124";
+  await f.run();
+  assert.equal(f.state.calls, 1);
+});
+
+test("a complete database outage after transcript save leaves metrics pending, never successful", async () => {
+  const { getMetricsProgress } = await import("../../utils/metricsProgress.js");
+  const f = fixture();
+  f.state.afterTranscriptSaved = () => { f.state.failAllWrites = true; };
+  await f.run();
+  assert.equal(f.data().processingStatus, "transcript_ready");
+  assert.ok(f.data().transcript.originalText);
+  assert.equal(f.data().metrics, undefined);
+  assert.deepEqual(getMetricsProgress(f.data()), { ready: false, active: true, failed: false });
+  assert.ok(JSON.stringify(f.state.logs).includes("Could not persist metrics failure"));
+  f.event.data.generation = "124";
+  await f.run();
+  assert.equal(f.state.calls, 1);
+});
+
+test("metrics cannot resurrect deleted documents or update a changed generation/status", async () => {
+  for (const change of [
+    (f) => f.documents.delete(recordingPath),
+    (f) => f.documents.delete(sessionPath),
+    (f) => { f.documents.get(sessionPath).deleting = true; },
+    (f) => { f.data().transcriptionJob.generation = "124"; },
+    (f) => { f.data().processingStatus = "analysing"; },
+  ]) {
+    const f = fixture();
+    f.state.afterTranscriptSaved = () => change(f);
+    f.dependencies.calculateMetrics = () => assert.fail("A stale worker must not calculate metrics");
+    await f.run();
+    assert.equal(f.state.writes.length, 2);
+    assert.equal(f.data()?.metrics, undefined);
+  }
+});
+
+test("UI metrics progress follows committed snapshots in order", async () => {
+  const { getMetricsProgress } = await import("../../utils/metricsProgress.js");
+  const f = fixture();
+  await f.run();
+  assert.deepEqual(f.state.writes.map(({ data }) => getMetricsProgress(data)), [
+    { ready: false, active: false, failed: false },
+    { ready: false, active: true, failed: false },
+    { ready: true, active: false, failed: false },
+  ]);
 });
 
 for (const status of ["transcribing", "transcript_ready", "analysing", "completed"]) {
