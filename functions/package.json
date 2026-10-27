@@ -6,7 +6,9 @@
     "node": "22"
   },
   "scripts": {
-    "test": "node --test test/transcription.test.js",
+    "test": "node --test test/transcription.test.js test/speakingMetrics.test.js test/previewMetrics.test.js",
+    "test:metrics": "node --test test/speakingMetrics.test.js test/previewMetrics.test.js",
+    "metrics:preview": "node scripts/previewMetrics.js",
     "test:rules": "firebase emulators:exec --project demo-speaksharp --config ../firebase.test.json --only firestore,storage \"node --test test/rules.test.js\""
   },
   "dependencies": {
