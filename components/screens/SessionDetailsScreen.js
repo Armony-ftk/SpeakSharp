@@ -13,6 +13,8 @@ import StatCard from "../ui/StatCard";
 import EmptyState from "../ui/EmptyState";
 import ActionSheet from "../ui/ActionSheet";
 import ConfirmDialog from "../ui/ConfirmDialog";
+import AttemptListItem from "../ui/AttemptListItem";
+import PrimaryButton from "../ui/PrimaryButton";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
 import {
@@ -21,6 +23,16 @@ import {
   getSessionErrorMessage,
   updateSession,
 } from "../../services/sessionService";
+import { getRecordings } from "../../services/recordingService";
+
+const RECORDING_LABELS = {
+  pending_upload: "Waiting for upload / processing",
+  transcribing: "Generating transcription",
+  transcript_ready: "Transcript ready",
+  analysing: "Analysing",
+  completed: "Completed",
+  failed: "Processing failed",
+};
 
 function firstParam(value) {
   return Array.isArray(value) ? value[0] : value;
@@ -52,7 +64,10 @@ function formatDuration(seconds) {
 export default function SessionDetailsScreen() {
   const params = useLocalSearchParams();
   const id = firstParam(params.id);
+  const localRecordingSaved =
+    firstParam(params.localRecordingSaved) === "1";
   const [session, setSession] = useState(null);
+  const [recordings, setRecordings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [showMenu, setShowMenu] = useState(false);
@@ -71,6 +86,7 @@ export default function SessionDetailsScreen() {
       const loadedSession = await getSessionById(id);
       setSession(loadedSession);
       if (!loadedSession) setErrorMessage("This session no longer exists.");
+      setRecordings(loadedSession ? await getRecordings(id) : []);
     } catch (error) {
       setErrorMessage(getSessionErrorMessage(error));
     } finally {
@@ -188,7 +204,7 @@ export default function SessionDetailsScreen() {
       ) : null}
 
       <View style={styles.statsRow}>
-        <StatCard value={session.attemptCount ?? 0} label="Attempts" />
+        <StatCard value={recordings.length} label="Attempts" />
         <StatCard
           value={
             session.latestRating != null
@@ -210,11 +226,34 @@ export default function SessionDetailsScreen() {
         <Text style={styles.errorText}>{errorMessage}</Text>
       ) : null}
 
-      <EmptyState
+      {localRecordingSaved ? (
+        <Text style={styles.successText}>
+          Recording saved locally and marked as pending upload.
+        </Text>
+      ) : null}
+
+      {recordings.length > 0 ? (
+        <>
+          <PrimaryButton label="RECORD AN ATTEMPT" icon="mic"
+            onPress={() => router.push(`/session/${id}/attempt`)} />
+          {recordings.map((recording, index) => (
+            <AttemptListItem key={recording.id}
+              number={recording.attemptNumber ?? recordings.length - index}
+              title={RECORDING_LABELS[recording.processingStatus] ?? "Recording saved"}
+              timestamp={formatDuration(recording.durationSeconds)}
+              onPress={() => router.push({
+                pathname: "/session/[id]/attempt",
+                params: { id, recordingId: recording.id, view: "processing" },
+              })} />
+          ))}
+        </>
+      ) : <EmptyState
         icon="mic-outline"
         title="No recordings to show"
-        description="Recording attempts will appear here in the next milestone."
-      />
+        description="Record a practice attempt to get started."
+        actionLabel="RECORD AN ATTEMPT"
+        onAction={() => router.push(`/session/${id}/attempt`)}
+      />}
 
       <ActionSheet
         visible={showMenu}
@@ -347,6 +386,13 @@ function getStyles(colors, typography) {
     errorText: {
       color: "#D92D20",
       fontSize: 13,
+      lineHeight: 18,
+      marginBottom: spacing.md,
+    },
+    successText: {
+      color: colors.success,
+      fontSize: 13,
+      fontWeight: "600",
       lineHeight: 18,
       marginBottom: spacing.md,
     },

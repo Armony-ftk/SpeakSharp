@@ -1,0 +1,35 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function validUpload(uid, sessionId, recordingFile, audioPath) {
+      let recordingId = request.resource.metadata.recordingId;
+      let session = firestore.get(/databases/(default)/documents/users/$(uid)/sessions/$(sessionId)).data;
+      let recording = firestore.get(/databases/(default)/documents/users/$(uid)/sessions/$(sessionId)/recordings/$(recordingId)).data;
+      return recordingId is string && recordingId.matches('^[^/]+$')
+        && recordingFile == recordingId + '.m4a'
+        && !session.get('deleting', false)
+        && recording.userId == uid && recording.sessionId == sessionId
+        && recording.audioPath == audioPath
+        && recording.processingStatus in ['pending_upload', 'failed']
+        && request.resource.size > 0 && request.resource.size <= 32 * 1024 * 1024
+        && request.resource.contentType in ['audio/mp4', 'audio/m4a', 'audio/x-m4a'];
+    }
+
+    match /recordings/{uid}/{sessionId}/{recordingFile} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validUpload(uid, sessionId, recordingFile,
+        'recordings/' + uid + '/' + sessionId + '/' + recordingFile);
+    }
+
+    match /users/{uid}/sessions/{sessionId}/recordings/{recordingFile} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validUpload(uid, sessionId, recordingFile,
+        'users/' + uid + '/sessions/' + sessionId + '/recordings/' + recordingFile);
+    }
+  }
+}

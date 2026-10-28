@@ -1,10 +1,7 @@
 const { getFirestore } = require("firebase-admin/firestore");
-const { initializeApp } = require("firebase-admin/app");
 const { getStorage } = require("firebase-admin/storage");
 const { logger } = require("firebase-functions");
 const { HttpsError, onCall } = require("firebase-functions/v2/https");
-
-initializeApp();
 
 const db = getFirestore();
 
@@ -41,12 +38,15 @@ const deleteSession = onCall(
         throw new HttpsError("not-found", "The session does not exist.");
       }
 
-      const recordingPrefix =
-        `users/${uid}/sessions/${normalizedId}/recordings/`;
-      await getStorage().bucket().deleteFiles({
-        prefix: recordingPrefix,
-        force: true,
-      });
+      // Block new uploads and transcription claims before removing either audio layout.
+      // Keep the marker on failure so retrying deletion can safely finish the cascade.
+      await sessionReference.update({ deleting: true });
+      for (const prefix of [
+        `users/${uid}/sessions/${normalizedId}/recordings/`,
+        `recordings/${uid}/${normalizedId}/`,
+      ]) {
+        await getStorage().bucket().deleteFiles({ prefix, force: true });
+      }
 
       await db.recursiveDelete(sessionReference);
       logger.info("Practice session deleted", { uid, sessionId: normalizedId });
