@@ -118,10 +118,16 @@ export async function getLocalRecordingUri(recordingId) {
   return new File(uri).exists ? uri : null;
 }
 
-export async function deleteLocalRecording(recordingId) {
+export async function deleteLocalRecording(recordingId, { onlyMapped = false } = {}) {
   const normalizedId = requireRecordingId(recordingId);
   const mappings = await readMappings();
   const mappedUri = mappings[normalizedId];
+  if (onlyMapped) {
+    if (!mappedUri) return;
+    if (mappedUri !== recordingFile(normalizedId).uri) {
+      throw localStorageError("recording/local-delete-failed", "The local audio reference does not match this recording.");
+    }
+  }
   const file =
     mappedUri && isUriInside(mappedUri, RECORDINGS_DIRECTORY)
       ? new File(mappedUri)

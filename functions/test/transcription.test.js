@@ -70,6 +70,7 @@ function fixture(overrides = {}) {
     generation: "123", size: String(audio.length), contentType: "audio/mp4" } };
   const dependencies = {
     db, bucketName,
+    deleteAudio: async (object) => { state.deletedAudio = object; },
     downloadAudio: async () => { state.downloads++; return audio; },
     transcribe: async () => {
       state.calls++;
@@ -83,6 +84,35 @@ function fixture(overrides = {}) {
   return { documents, state, event, dependencies, data: () => documents.get(recordingPath),
     run: (input = event) => createTranscriptionProcessor(dependencies)(input) };
 }
+
+test("late finalization removes only the event generation and cleanup failure requests redelivery", async () => {
+  for (const removed of [false, true]) {
+    const f = fixture({ deleting: true });
+    if (removed) f.documents.delete(recordingPath);
+    f.dependencies.deleteAudio = async () => { throw new Error("private Storage error"); };
+    await assert.rejects(f.run(), /cleanup unavailable/);
+    assert.equal(f.state.calls, 0); assert.equal(f.state.downloads, 0);
+    f.dependencies.deleteAudio = async (object) => { f.state.deletedAudio = object; };
+    await f.run(); assert.deepEqual(f.state.deletedAudio, f.event.data);
+    assert.equal(f.state.writes.length, 0);
+    assert.ok(!JSON.stringify(f.state.logs).includes("private"));
+  }
+});
+
+test("recording deletion marker blocks transcription and metrics writes, including failure writes", async () => {
+  for (const stage of ["download", "transcription", "metrics"]) {
+    const f = fixture();
+    if (stage === "download") f.dependencies.downloadAudio = async () => { f.data().deleting = true; return audio; };
+    if (stage === "transcription") f.state.duringTranscription = () => { f.data().deleting = true; };
+    if (stage === "metrics") f.state.afterTranscriptSaved = () => { f.data().deleting = true; };
+    await f.run();
+    assert.equal(f.data().metrics, undefined);
+    assert.equal(f.data().processingError, undefined);
+    if (stage !== "metrics") assert.equal(f.data().transcript, undefined);
+  }
+  const f = fixture(); f.state.duringTranscription = () => { f.data().deleting = true; throw new Error("failed"); };
+  await f.run(); assert.equal(f.data().processingStatus, "transcribing");
+});
 
 test("success claims before API call, preserves fields, and saves transcript/status together", async () => {
   const f = fixture();
@@ -352,8 +382,9 @@ test("a failed transcript write records failure without retrying Deepgram", asyn
   assert.equal(f.state.calls, 1);
 });
 
-test("database outage before claim causes no paid request", async () => {
-  const f = fixture(); f.state.failAllWrites = true; await f.run();
+test("database outage before claim permits event redelivery without a paid request", async () => {
+  const f = fixture(); f.state.failAllWrites = true;
+  await assert.rejects(f.run(), /cleanup unavailable/);
   assert.equal(f.state.calls, 0);
 });
 

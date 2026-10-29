@@ -36,7 +36,7 @@ function fixture(overrides = {}) {
   const snapshot = (path) => ({ id: path.split("/").at(-1), exists: documents.has(path), data: () => documents.get(path) });
   const reference = (path) => ({ path, collection: (name) => ({
     doc: (id) => reference(`${path}/${name}/${id}`),
-    orderBy: () => ({ limit: () => ({ queryPath: `${path}/${name}` }) }),
+    orderBy: () => ({ queryPath: `${path}/${name}` }),
   }) });
   let queue = Promise.resolve();
   function resolve(value) {
@@ -53,7 +53,7 @@ function fixture(overrides = {}) {
         get: async (ref) => ref.queryPath ? { docs: [...documents.keys()]
           .filter((path) => path.startsWith(`${ref.queryPath}/`))
           .sort((a, b) => documents.get(b).createdAt - documents.get(a).createdAt)
-          .slice(0, 1).map(snapshot) } : snapshot(ref.path),
+          .map(snapshot) } : snapshot(ref.path),
         update: (ref, updates) => writes.push([ref.path, updates]),
       });
       if (state.failAllWrites || (state.failSuccessWrite && writes.some(([, update]) => update.processingStatus === "completed"))) {
@@ -347,13 +347,22 @@ test("diagnostic stages distinguish input validation, generation and response va
 
 test("an older attempt finishing later contributes once without overwriting latestRating or attemptCount", async () => {
   const f = fixture({ attemptNumber: 1 });
-  f.documents.set(`${sessionPath}/recordings/newer`, { createdAt: 200, attemptNumber: 2, processingStatus: "completed" });
+  f.documents.set(`${sessionPath}/recordings/newer`, { createdAt: 200, attemptNumber: 2, processingStatus: "completed", aiFeedback: { overallRating: 9 } });
   Object.assign(f.session(), { latestRating: 9, bestRating: 9, ratingSum: 9 });
   await f.run(); await f.run();
   assert.equal(f.session().latestRating, 9);
   assert.equal(f.session().bestRating, 9);
   assert.equal(f.session().ratingSum, 16.7);
   assert.equal(f.session().attemptCount, 2);
+});
+
+test("completion after deletion selects the newest rated attempt even when a newer upload is pending", async () => {
+  const f = fixture();
+  f.documents.set(`${sessionPath}/recordings/pending`, { createdAt: 300, processingStatus: "pending_upload" });
+  f.documents.set(`${sessionPath}/recordings/older`, { createdAt: 50, processingStatus: "completed", aiFeedback: { overallRating: 4 } });
+  Object.assign(f.session(), { ratingSum: 4, bestRating: 4, latestRating: 4 });
+  await f.run();
+  assert.equal(f.session().latestRating, 7.7); assert.equal(f.session().bestRating, 7.7); assert.equal(f.session().ratingSum, 11.7);
 });
 
 test("persistence failure cannot partially update aggregates or mark completion", async () => {
@@ -511,4 +520,25 @@ test("only the analysis trigger binds the existing secret; both new functions us
   assert.equal(analyseRecording.__endpoint.eventTrigger.retry, false);
   assert.deepEqual(retryRecordingAnalysis.__endpoint.region, ["us-central1"]);
   assert.ok(!retryRecordingAnalysis.__endpoint.secretEnvironmentVariables?.length);
+});
+
+test("recording deletion fences analysis claims, successful/failed responses and manual retries", async () => {
+  const marked = fixture({ deleting: true });
+  await marked.run(); assert.equal(marked.state.calls, 0);
+  await assert.rejects(marked.retry(), { code: "not-found" });
+  for (const removed of [false, true]) {
+    for (const fails of [false, true]) {
+      const f = fixture();
+      f.state.duringGeneration = () => {
+        if (removed) f.documents.delete(recordingPath);
+        else f.data().deleting = true;
+        if (fails) throw new Error("provider failed after deletion");
+      };
+      await f.run();
+      assert.equal(f.data()?.aiFeedback, undefined);
+      assert.equal(f.session().ratingSum, 0);
+      assert.equal(f.documents.has(recordingPath), !removed);
+      if (!removed) assert.equal(f.data().processingStatus, "analysing");
+    }
+  }
 });

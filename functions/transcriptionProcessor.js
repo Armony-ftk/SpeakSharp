@@ -82,7 +82,7 @@ function ownsRecording(data, ids, name) {
 }
 
 // Dependencies are injected so the actual event handler can be tested without cloud calls.
-function createTranscriptionProcessor({ db, bucketName, downloadAudio, transcribe, logger,
+function createTranscriptionProcessor({ db, bucketName, downloadAudio, deleteAudio, transcribe, logger,
   calculateMetrics = calculateSpeakingMetrics }) {
   return async (event) => {
     const object = event.data;
@@ -100,7 +100,7 @@ function createTranscriptionProcessor({ db, bucketName, downloadAudio, transcrib
         const session = await transaction.get(sessionRef);
         const recording = await transaction.get(recordingRef);
         const data = recording.data();
-        if (!session.exists || session.data().deleting || !recording.exists
+        if (!session.exists || session.data().deleting || !recording.exists || data.deleting
           || !ownsRecording(data, ids, object.name)
           || data.processingStatus !== expectedStatus
           || data.transcriptionJob?.generation !== generation) return false;
@@ -115,7 +115,11 @@ function createTranscriptionProcessor({ db, bucketName, downloadAudio, transcrib
       const claim = await db.runTransaction(async (transaction) => {
         const session = await transaction.get(sessionRef);
         const recording = await transaction.get(recordingRef);
-        if (!session.exists || session.data().deleting || !recording.exists) return null;
+        // An upload authorized before deletion can finalize afterwards. Remove only
+        // that event's object generation, outside the transaction, without processing.
+        if (!session.exists || session.data().deleting || !recording.exists || recording.data().deleting) {
+          return { deleteAudio: true };
+        }
         const data = recording.data();
         if (!ownsRecording(data, ids, object.name)) return null;
         const status = data.processingStatus ?? data.status;
@@ -141,6 +145,11 @@ function createTranscriptionProcessor({ db, bucketName, downloadAudio, transcrib
         return { duration: data.durationSeconds ?? data.duration };
       });
       if (claim === null) return;
+      if (claim.deleteAudio) {
+        stage = "deletion_cleanup";
+        await deleteAudio(object);
+        return;
+      }
       claimed = true;
       stage = "validation";
       validateAudio(object, claim.duration);
@@ -155,7 +164,7 @@ function createTranscriptionProcessor({ db, bucketName, downloadAudio, transcrib
       stage = "checking";
       const session = await sessionRef.get();
       const recording = await recordingRef.get();
-      if (!session.exists || session.data().deleting || !recording.exists
+      if (!session.exists || session.data().deleting || !recording.exists || recording.data().deleting
         || recording.data().transcriptionJob?.generation !== generation
         || recording.data().processingStatus !== "transcribing") return;
 
@@ -193,6 +202,12 @@ function createTranscriptionProcessor({ db, bucketName, downloadAudio, transcrib
       }, "transcript_ready");
       if (metricsSaved) logger.info("Recording metrics ready", { recordingId: ids.recordingId, generation });
     } catch (error) {
+      // Cleanup and pre-provider claim failures escape for event redelivery. Normal
+      // provider failures retain the explicit retry policy and never throw here.
+      if (stage === "deletion_cleanup" || stage === "claim") {
+        logger.error("Recording finalization unavailable", { recordingId: ids.recordingId, stage, code: "deletion_unavailable" });
+        throw new Error("Recording audio cleanup unavailable");
+      }
       const code = safeErrorCode(error, stage);
       const metricsFailed = stage === "metrics" || stage === "metrics_saving";
       logger.warn(metricsFailed ? "Recording metrics failed" : "Recording transcription failed", {

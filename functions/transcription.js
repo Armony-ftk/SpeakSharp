@@ -52,9 +52,13 @@ const transcribeRecording = onObjectFinalized({
   concurrency: 1,
   minInstances: 0,
   maxInstances: 2,
-  retry: false,
+  // Late-upload cleanup and pre-provider claims can request redelivery; provider failures
+  // remain caught by the processor and do not repeat paid transcription.
+  retry: true,
 }, (event) => createTranscriptionProcessor({
   db: getFirestore(), bucketName: BUCKET, downloadAudio, transcribe, logger,
+  deleteAudio: (object) => getStorage().bucket(object.bucket)
+    .file(object.name, { generation: object.generation }).delete({ ignoreNotFound: true }),
 })(event));
 
 module.exports = { transcribeRecording, transcribe };

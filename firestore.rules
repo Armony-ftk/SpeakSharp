@@ -155,6 +155,7 @@ service cloud.firestore {
             && request.resource.data.updatedAt == request.time;
           allow update: if isOwner(uid)
             && sessionAvailable(uid, sessionId)
+            && !resource.data.get('deleting', false)
             && (validUploadReceipt(request.resource.data, resource.data)
             || validLegacyPreparation(
               request.resource.data,

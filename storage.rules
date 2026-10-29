@@ -13,6 +13,7 @@ service firebase.storage {
       return recordingId is string && recordingId.matches('^[^/]+$')
         && recordingFile == recordingId + '.m4a'
         && !session.get('deleting', false)
+        && !recording.get('deleting', false)
         && recording.userId == uid && recording.sessionId == sessionId
         && recording.audioPath == audioPath
         && recording.processingStatus in ['pending_upload', 'failed']

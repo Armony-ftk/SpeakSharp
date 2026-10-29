@@ -15,6 +15,8 @@ import {
 import { auth, db } from "../config/firebase";
 import { RECORDING_STATUS } from "../constants/recordindStatuses";
 import { MAX_RECORDING_SECONDS, recordingAudioPath } from "../constants/recording";
+import { requestRecordingDeletion } from "./processingService";
+import { deleteLocalRecording } from "../storage/audioStorage";
 
 function normalizeRecording(snapshot) {
   const { status, storagePath, duration, ...data } = snapshot.data();
@@ -99,7 +101,7 @@ export async function createRecording(sessionId, recordingId, recordingData) {
   if (existing.exists()) {
     const data = normalizeRecording(existing);
     if (
-      data.processingStatus === RECORDING_STATUS.PENDING_UPLOAD &&
+      !data.deleting && data.processingStatus === RECORDING_STATUS.PENDING_UPLOAD &&
       data.durationSeconds === duration
     ) {
       return normalizedRecordingId;
@@ -169,6 +171,7 @@ export async function prepareRecordingUpload(sessionId, recordingId) {
     const snapshot = await transaction.get(reference);
     if (!snapshot.exists()) throw new Error("The recording no longer exists.");
     const data = normalizeRecording(snapshot);
+    if (data.deleting) throw new Error("This recording is being deleted. Please retry deletion from the session.");
     if (![RECORDING_STATUS.PENDING_UPLOAD, RECORDING_STATUS.FAILED].includes(data.processingStatus)) {
       throw new Error("This recording has already started processing.");
     }
@@ -217,6 +220,34 @@ export async function markRecordingUploaded(
       updatedAt: serverTimestamp(),
     },
   );
+}
+
+export async function deleteRecording(sessionId, recordingId) {
+  requireCurrentUid();
+  const sid = requireDocumentId(sessionId, "session ID");
+  const rid = requireDocumentId(recordingId, "recording ID");
+  const result = await requestRecordingDeletion(sid, rid);
+  if (result?.success !== true) throw new Error("Deletion was not confirmed.");
+  try {
+    await deleteLocalRecording(rid, { onlyMapped: true });
+    return { ...result, localCleanupFailed: false };
+  } catch {
+    // Cloud deletion succeeded. A device-file failure must not report cloud failure.
+    return { ...result, localCleanupFailed: true };
+  }
+}
+
+export function getRecordingDeletionErrorMessage(error) {
+  const messages = {
+    "auth/no-current-user": "Your session has ended. Please sign in again.",
+    "functions/unauthenticated": "Your session has ended. Please sign in again.",
+    "functions/permission-denied": "You do not have permission to delete this recording.",
+    "functions/not-found": "This session no longer exists. Return to your sessions and refresh.",
+    "functions/invalid-argument": "This recording could not be identified. Refresh the session and try again.",
+    "functions/failed-precondition": "Deletion could not finish. If the session is being deleted, retry session deletion; otherwise retry this recording or contact support.",
+  };
+  return messages[error?.code]
+    ?? "Deletion could not be confirmed. Check your connection and retry Delete. The request may already have reached the server.";
 }
 
 export function getTranscriptionErrorMessage(code) {

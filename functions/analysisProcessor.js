@@ -47,7 +47,7 @@ function analysisErrorDiagnostics(error) {
 }
 
 function shouldAnalyse(before, after) {
-  return after?.processingStatus === "transcript_ready" && after.metrics != null
+  return !after?.deleting && after?.processingStatus === "transcript_ready" && after.metrics != null
     && (before?.processingStatus !== "transcript_ready" || !isDeepStrictEqual(before?.metrics, after.metrics)
       || (before?.analysisJob?.attempt ?? 0) !== (after.analysisJob?.attempt ?? 0));
 }
@@ -84,7 +84,7 @@ function createAnalysisProcessor({ db, generate, logger }) {
         const session = await transaction.get(sessionRef);
         const recording = await transaction.get(recordingRef);
         const data = recording.data();
-        if (!session.exists || session.data().deleting || !recording.exists || !ownsRecording(data, ids)
+        if (!session.exists || session.data().deleting || !recording.exists || data.deleting || !ownsRecording(data, ids)
           || data.processingStatus !== "transcript_ready" || data.metrics == null
           || (data.analysisJob?.attempt ?? 0) !== attempt || hasSavedFeedback(data.aiFeedback)) return null;
         transaction.update(recordingRef, {
@@ -108,11 +108,17 @@ function createAnalysisProcessor({ db, generate, logger }) {
         const session = await transaction.get(sessionRef);
         const recording = await transaction.get(recordingRef);
         const data = recording.data();
-        if (!session.exists || session.data().deleting || !recording.exists || !ownsRecording(data, ids)
+        if (!session.exists || session.data().deleting || !recording.exists || data.deleting || !ownsRecording(data, ids)
           || data.processingStatus !== "analysing" || data.analysisJob?.id !== claimId
           || hasSavedFeedback(data.aiFeedback)) return false;
         // The app orders attempts by createdAt; new recordings currently have no attemptNumber.
-        const latest = await transaction.get(sessionRef.collection("recordings").orderBy("createdAt", "desc").limit(1));
+        const attempts = await transaction.get(sessionRef.collection("recordings").orderBy("createdAt", "desc"));
+        // Match deletion's newest eligible completed attempt, including this commit.
+        // A newer pending upload must not leave a stale latestRating after deletion.
+        const latest = attempts.docs.find((doc) => doc.id === ids.recordingId
+          || (doc.data().processingStatus === "completed"
+            && Number.isFinite(doc.data().aiFeedback?.overallRating)
+            && doc.data().aiFeedback.overallRating >= 0 && doc.data().aiFeedback.overallRating <= 10));
         const sessionData = session.data();
         const rating = feedback.overallRating;
         if (!Number.isFinite(sessionData.ratingSum ?? 0) || (sessionData.ratingSum ?? 0) < 0
@@ -121,7 +127,7 @@ function createAnalysisProcessor({ db, generate, logger }) {
         transaction.update(sessionRef, {
           ratingSum: Math.round(((sessionData.ratingSum ?? 0) + rating) * 10) / 10,
           bestRating: Math.max(sessionData.bestRating ?? 0, rating),
-          ...(latest.docs[0]?.id === ids.recordingId ? { latestRating: rating } : {}),
+          ...(latest?.id === ids.recordingId ? { latestRating: rating } : {}),
           updatedAt: FieldValue.serverTimestamp(),
         });
         // This atomic commit is also the once-only aggregate contribution marker.
@@ -146,7 +152,7 @@ function createAnalysisProcessor({ db, generate, logger }) {
           const session = await transaction.get(sessionRef);
           const recording = await transaction.get(recordingRef);
           const data = recording.data();
-          if (!session.exists || session.data().deleting || !recording.exists
+          if (!session.exists || session.data().deleting || !recording.exists || data.deleting
             || data.processingStatus !== "analysing" || data.analysisJob?.id !== claimId) return;
           transaction.update(recordingRef, {
             processingStatus: "failed", processingError: { stage: "analysis", code },
@@ -176,7 +182,7 @@ function createAnalysisRetry({ db, logger, now = Date.now }) {
         const session = await transaction.get(sessionRef);
         const recording = await transaction.get(recordingRef);
         const data = recording.data();
-        if (!session.exists || session.data().deleting || !recording.exists
+        if (!session.exists || session.data().deleting || !recording.exists || data.deleting
           || !ownsRecording(data, { userId: uid, sessionId })) {
           throw new HttpsError("not-found", "This recording is unavailable.");
         }

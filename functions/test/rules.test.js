@@ -4,8 +4,8 @@ const { initializeApp: initializeAdminApp, deleteApp: deleteAdminApp } = require
 const { getFirestore: getAdminFirestore } = require("firebase-admin/firestore");
 const { getStorage: getAdminStorage } = require("firebase-admin/storage");
 const { initializeApp, deleteApp } = require("firebase/app");
-const { getFirestore, connectFirestoreEmulator, doc, setDoc, updateDoc, getDoc, serverTimestamp, deleteField } = require("firebase/firestore");
-const { getStorage, connectStorageEmulator, ref, uploadBytes } = require("firebase/storage");
+const { getFirestore, connectFirestoreEmulator, doc, setDoc, updateDoc, getDoc, serverTimestamp, deleteField, deleteDoc } = require("firebase/firestore");
+const { getStorage, connectStorageEmulator, ref, uploadBytes, deleteObject } = require("firebase/storage");
 
 // Deliberately refuse to run these writes against any real Firebase project.
 const projectId = "demo-speaksharp";
@@ -125,6 +125,9 @@ test("deleting session blocks new recordings, uploads, receipts, and clearing de
 });
 
 test("unchanged owner session CRUD remains allowed outside deletion", async () => {
+  await setDoc(doc(owner.db, "users/owner/sessions/client-created"), {
+    ...session, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
   await setup();
   await updateDoc(doc(owner.db, sessionPath), { title: "Updated", status: "completed", updatedAt: serverTimestamp() });
   assert.equal((await getDoc(doc(owner.db, sessionPath))).data().title, "Updated");
@@ -247,4 +250,119 @@ test("existing callable authentication and cascade remove both audio layouts and
   const bucket = getAdminStorage(adminApp).bucket();
   assert.equal((await bucket.file(f.data.audioPath).exists())[0], false);
   assert.equal((await bucket.file(oldAudioPath).exists())[0], false);
+});
+
+test("recording deletion marker blocks uploads/receipts and cannot be forged, cleared or bypassed by client deletion", async () => {
+  const f = await setup(); await setDoc(f.reference, f.data); await upload(owner, f.data, f.id);
+  await denied(updateDoc(f.reference, { deleting: true }));
+  await denied(deleteDoc(f.reference));
+  await denied(deleteObject(ref(owner.storage, f.data.audioPath)));
+  await adminDb.doc(f.path).update({ deleting: true });
+  await denied(upload(owner, f.data, f.id));
+  await denied(updateDoc(f.reference, { uploadedAt: serverTimestamp(), updatedAt: serverTimestamp() }));
+  await denied(updateDoc(f.reference, { deleting: deleteField() }));
+  await denied(setDoc(f.reference, f.data));
+  // The marker affects only this recording; another attempt remains usable.
+  const sibling = await setup(); await setDoc(sibling.reference, sibling.data); await upload(owner, sibling.data, sibling.id);
+  assert.equal((await getDoc(f.reference)).exists(), true);
+});
+
+async function deletionFixture() {
+  const { createRecordingDeletion } = require("../recordingDeletion");
+  const sid = `delete-session-${++counter}`;
+  const parent = adminDb.doc(`users/owner/sessions/${sid}`);
+  const bucket = getAdminStorage(adminApp).bucket();
+  const logger = { info() {}, warn() {}, error() {} };
+  await parent.set({ ...session, ratingSum: 20, bestRating: 9, latestRating: 7 });
+  const records = [];
+  for (const [id, rating, time] of [["old", 4, 1], ["best", 9, 2], ["latest", 7, 3]]) {
+    const reference = parent.collection("recordings").doc(id);
+    const audioPath = `recordings/owner/${sid}/${id}.m4a`;
+    await reference.set({ userId: "owner", sessionId: sid, audioPath, processingStatus: "completed",
+      createdAt: new Date(time), aiFeedback: { overallRating: rating } });
+    await bucket.file(audioPath).save(Buffer.from("0000ftypM4A "), { contentType: "audio/mp4" });
+    records.push({ id, reference, audioPath });
+  }
+  const remove = createRecordingDeletion({ db: adminDb, bucket, logger });
+  return { sid, parent, bucket, logger, records,
+    remove: (id) => remove({ auth: { uid: "owner" }, data: { sessionId: sid, recordingId: id } }) };
+}
+
+test("recording callable performs real Storage cleanup and atomic aggregates under duplicate and distinct concurrent deletions", async () => {
+  const { deleteRecording } = require("../deleteRecording");
+  const f = await deletionFixture();
+  const invoke = (id) => deleteRecording.run({ auth: { uid: "owner" }, data: { sessionId: f.sid, recordingId: id } });
+  await assert.rejects(deleteRecording.run({ data: { sessionId: f.sid, recordingId: "best" } }), { code: "unauthenticated" });
+  await assert.rejects(deleteRecording.run({ auth: { uid: "other" }, data: { sessionId: f.sid, recordingId: "best" } }), { code: "not-found" });
+  await Promise.all([invoke("best"), invoke("best"), invoke("latest")]);
+  assert.equal((await invoke("best")).alreadyDeleted, true);
+  const saved = (await f.parent.get()).data();
+  assert.deepEqual([saved.ratingSum, saved.bestRating, saved.latestRating, saved.attemptCount], [4, 4, 4, 0]);
+  assert.equal(saved.title, session.title);
+  for (const record of f.records) {
+    assert.equal((await record.reference.get()).exists, record.id === "old");
+    assert.equal((await f.bucket.file(record.audioPath).exists())[0], record.id === "old");
+  }
+  await f.remove("old");
+  const empty = (await f.parent.get()).data();
+  assert.deepEqual([empty.ratingSum, empty.bestRating, empty.latestRating], [0, null, null]);
+});
+
+test("real deletion during transcription prevents transcript and metrics from being recreated", async () => {
+  const { createTranscriptionProcessor } = require("../transcriptionProcessor");
+  const f = await deletionFixture(); const record = f.records[2];
+  await record.reference.update({ processingStatus: "pending_upload", durationSeconds: 30 });
+  const audio = Buffer.from("0000ftypM4A ");
+  const process = createTranscriptionProcessor({ db: adminDb, logger: f.logger, bucketName: f.bucket.name,
+    downloadAudio: async () => audio,
+    transcribe: async () => {
+      await f.remove(record.id);
+      return { metadata: { duration: 30 }, results: { channels: [{ alternatives: [{ transcript: "Speech after deletion." }] }] } };
+    },
+  });
+  await process({ data: { bucket: f.bucket.name, name: record.audioPath, generation: "123", contentType: "audio/mp4", size: audio.length } });
+  assert.equal((await record.reference.get()).exists, false);
+  assert.equal((await f.parent.get()).data().ratingSum, 13);
+});
+
+test("real deletion during Gemini work discards stale feedback and its aggregate contribution", async () => {
+  const { createAnalysisProcessor } = require("../analysisProcessor");
+  const f = await deletionFixture(); const record = f.records[2];
+  await record.reference.update({ processingStatus: "transcript_ready", aiFeedback: null, durationSeconds: 30,
+    transcript: { originalText: "Today we discuss clear presentations and regular practice. Please ask a friend for feedback and improve your next speech." },
+    metrics: { wordCount: 22, wordsPerMinute: 44, fillerCount: 0, fillerWords: {}, targetDurationStatus: null } });
+  const response = {
+    criteriaScores: Object.fromEntries(["clarity", "logicalStructure", "contentRelevance", "conciseness", "audienceOrientation"].map((key) => [key, { score: 8, feedback: "Specific feedback." }])),
+    structureFeedback: Object.fromEntries(["introduction", "body", "conclusion"].map((key) => [key, { score: 8, feedback: "Specific feedback." }])),
+    strengths: ["Clear purpose.", "Concrete action.", "Concise."], improvements: ["Add an example.", "Explain the process.", "Measure progress."],
+    audienceQuestions: ["How often?", "Who gives feedback?", "How to measure progress?"], overallSummary: "Develop advice with an example.",
+  };
+  let calls = 0;
+  const process = createAnalysisProcessor({ db: adminDb, logger: f.logger, generate: async () => {
+    calls++; await f.remove(record.id); return { text: JSON.stringify(response) };
+  } });
+  await process({ params: { userId: "owner", sessionId: f.sid, recordingId: record.id },
+    data: { before: { data: () => ({ processingStatus: "transcribing" }) }, after: await record.reference.get() } });
+  assert.equal(calls, 1); assert.equal((await record.reference.get()).exists, false);
+  const saved = (await f.parent.get()).data();
+  assert.deepEqual([saved.ratingSum, saved.bestRating, saved.latestRating], [13, 9, 9]);
+});
+
+test("late upload finalization after deletion removes its real object without provider calls", async () => {
+  const { createTranscriptionProcessor } = require("../transcriptionProcessor");
+  const f = await deletionFixture(); const record = f.records[2]; await f.remove(record.id);
+  // Admin save models the finalization of an upload already authorized before deletion.
+  const file = f.bucket.file(record.audioPath);
+  await file.save(Buffer.from("0000ftypM4A "), { contentType: "audio/mp4" });
+  const [metadata] = await file.getMetadata();
+  const process = createTranscriptionProcessor({ db: adminDb, logger: f.logger, bucketName: f.bucket.name,
+    downloadAudio: async () => assert.fail("Deleted recording must not download"),
+    transcribe: async () => assert.fail("Deleted recording must not transcribe"),
+    deleteAudio: (object) => f.bucket.file(object.name, { generation: object.generation }).delete({ ignoreNotFound: true }),
+  });
+  const event = { data: { ...metadata, bucket: f.bucket.name, name: record.audioPath } };
+  await process(event); await process(event);
+  assert.equal((await file.exists())[0], false);
+  assert.equal((await record.reference.get()).exists, false);
+  assert.equal((await f.parent.get()).data().ratingSum, 13);
 });

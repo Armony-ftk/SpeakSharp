@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -23,7 +23,7 @@ import {
   getSessionErrorMessage,
   updateSession,
 } from "../../services/sessionService";
-import { getRecordings } from "../../services/recordingService";
+import { deleteRecording, getRecordingDeletionErrorMessage, getRecordings } from "../../services/recordingService";
 
 const RECORDING_LABELS = {
   pending_upload: "Waiting for upload / processing",
@@ -75,6 +75,10 @@ export default function SessionDetailsScreen() {
   const [showDeleteSession, setShowDeleteSession] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [recordingToDelete, setRecordingToDelete] = useState(null);
+  const [deletingRecordingId, setDeletingRecordingId] = useState(null);
+  const recordingDeletionBusy = useRef(false);
+  const deletedRecordingIds = useRef(new Set());
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
 
@@ -86,7 +90,8 @@ export default function SessionDetailsScreen() {
       const loadedSession = await getSessionById(id);
       setSession(loadedSession);
       if (!loadedSession) setErrorMessage("This session no longer exists.");
-      setRecordings(loadedSession ? await getRecordings(id) : []);
+      const loadedRecordings = loadedSession ? await getRecordings(id) : [];
+      setRecordings(loadedRecordings.filter((recording) => !deletedRecordingIds.current.has(recording.id)));
     } catch (error) {
       setErrorMessage(getSessionErrorMessage(error));
     } finally {
@@ -120,7 +125,7 @@ export default function SessionDetailsScreen() {
   };
 
   const handleDeleteSession = async () => {
-    if (deleting) return;
+    if (deleting || recordingDeletionBusy.current) return;
     setDeleting(true);
     setErrorMessage("");
     try {
@@ -131,6 +136,30 @@ export default function SessionDetailsScreen() {
       setErrorMessage(getSessionErrorMessage(error));
       setShowDeleteSession(false);
       setDeleting(false);
+    }
+  };
+
+  const handleDeleteRecording = async () => {
+    if (!recordingToDelete || recordingDeletionBusy.current || deleting) return;
+    const recordingId = recordingToDelete.id;
+    recordingDeletionBusy.current = true;
+    setDeletingRecordingId(recordingId);
+    setErrorMessage("");
+    try {
+      const result = await deleteRecording(id, recordingId);
+      deletedRecordingIds.current.add(recordingId);
+      setRecordings((current) => current.filter((recording) => recording.id !== recordingId));
+      setRecordingToDelete(null);
+      await loadSession();
+      if (result.localCleanupFailed) {
+        setErrorMessage("Recording deleted from the cloud, but its saved audio could not be removed from this device.");
+      }
+    } catch (error) {
+      setErrorMessage(getRecordingDeletionErrorMessage(error));
+      setRecordingToDelete(null);
+    } finally {
+      recordingDeletionBusy.current = false;
+      setDeletingRecordingId(null);
     }
   };
 
@@ -239,8 +268,13 @@ export default function SessionDetailsScreen() {
           {recordings.map((recording, index) => (
             <AttemptListItem key={recording.id}
               number={recording.attemptNumber ?? recordings.length - index}
-              title={RECORDING_LABELS[recording.processingStatus] ?? "Recording saved"}
+              title={recording.deleting ? "Deletion unfinished: retry Delete" : RECORDING_LABELS[recording.processingStatus] ?? "Recording saved"}
               timestamp={formatDuration(recording.durationSeconds)}
+              disabled={deleting || deletingRecordingId != null}
+              deleting={deletingRecordingId === recording.id}
+              onDelete={() => {
+                if (!recordingDeletionBusy.current && !deleting) setRecordingToDelete(recording);
+              }}
               onPress={() => router.push({
                 pathname: "/session/[id]/attempt",
                 params: { id, recordingId: recording.id, view: "processing" },
@@ -254,6 +288,17 @@ export default function SessionDetailsScreen() {
         actionLabel="RECORD AN ATTEMPT"
         onAction={() => router.push(`/session/${id}/attempt`)}
       />}
+
+      <ConfirmDialog
+        visible={recordingToDelete != null}
+        title="Delete recording?"
+        message="This recording, audio, transcript, metrics and AI feedback will be permanently deleted."
+        confirmLabel={deletingRecordingId ? "DELETING..." : "DELETE"}
+        destructive
+        loading={deletingRecordingId != null}
+        onCancel={() => { if (!recordingDeletionBusy.current) setRecordingToDelete(null); }}
+        onConfirm={handleDeleteRecording}
+      />
 
       <ActionSheet
         visible={showMenu}
