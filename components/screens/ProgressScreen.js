@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import ScreenContainer from "../ui/ScreenContainer";
@@ -8,47 +8,43 @@ import ProgressMetricCard from "../ui/ProgressMetricCard";
 import EmptyState from "../ui/EmptyState";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
-
-// Mock data standing in for a real progress-summary API.
-const hasAttempts = true;
-const overview = { sessions: 5, attempts: 21, average: 7.5, best: 8.6 };
-const improvements = [
-  {
-    label: "Average Rating",
-    previousValue: "6.4",
-    currentValue: "7.5",
-    delta: "+1.1",
-  },
-  {
-    label: "Filler Words",
-    previousValue: "18",
-    currentValue: "9",
-    delta: "9 fewer",
-  },
-  {
-    label: "Speaking Pace",
-    previousValue: "132 WPM",
-    currentValue: "121 WPM",
-    delta: "11 WPM slower",
-  },
-];
+import { useProgress } from "../../hooks/useProgress";
+import { formatProgressRating, getProgressCards, getProgressMessage } from "../../utils/progressStats";
 
 export default function ProgressScreen() {
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
+  const { progress, loading, errorMessage, retry } = useProgress();
+  const { overview, eligibleCount, undatedCount } = progress;
+  const improvements = getProgressCards(progress);
 
-  if (!hasAttempts) {
+  if (loading || errorMessage || overview.attempts === 0) {
     return (
       <ScreenContainer contentStyle={styles.emptyContent}>
         <AppHeader />
         <View style={styles.emptyBody}>
-          <EmptyState
-            icon="trending-up-outline"
-            title="Your progress starts here"
-            description="Complete your first practice attempt to start tracking your improvement."
-            actionLabel="START PRACTISING"
-            onAction={() => router.push("/create-session")}
-          />
+          {loading ? (
+            <>
+              <ActivityIndicator color={colors.accent} />
+              <Text style={styles.loadingText}>Loading your progress...</Text>
+            </>
+          ) : errorMessage ? (
+            <EmptyState
+              icon="cloud-offline-outline"
+              title="Progress unavailable"
+              description={errorMessage}
+              actionLabel="TRY AGAIN"
+              onAction={retry}
+            />
+          ) : (
+            <EmptyState
+              icon="trending-up-outline"
+              title="Your progress starts here"
+              description="Complete your first practice attempt to start tracking your improvement."
+              actionLabel="START PRACTISING"
+              onAction={() => router.push("/create-session")}
+            />
+          )}
         </View>
       </ScreenContainer>
     );
@@ -66,9 +62,9 @@ export default function ProgressScreen() {
           <StatCard value={overview.attempts} label="Attempts" />
         </View>
         <View style={styles.statsRow}>
-          <StatCard value={overview.average} label="Average" />
+          <StatCard value={formatProgressRating(overview.average)} label="Average" />
           <StatCard
-            value={overview.best}
+            value={formatProgressRating(overview.best)}
             label="Best"
             valueColor={colors.success}
           />
@@ -76,6 +72,12 @@ export default function ProgressScreen() {
       </View>
 
       <Text style={styles.sectionTitle}>Your Improvement</Text>
+      <Text style={styles.comparisonNote}>
+        {eligibleCount < 4
+          ? `Comparisons need 4 completed, rated attempts with recording dates (${eligibleCount}/4 available).`
+          : "Latest 2 rated attempts compared with the previous 2. Filler words and pace are averages per attempt; each metric needs valid data for both attempts in both groups."}
+        {undatedCount > 0 ? " Rated attempts without valid recording dates are excluded from comparisons." : ""}
+      </Text>
       {improvements.map((item) => (
         <ProgressMetricCard key={item.label} {...item} />
       ))}
@@ -86,7 +88,7 @@ export default function ProgressScreen() {
           <Text style={styles.keepGoingTitle}>Keep Going</Text>
         </View>
         <Text style={styles.keepGoingText}>
-          You're showing consistent improvement across your attempts.
+          {getProgressMessage(progress)}
         </Text>
       </View>
     </ScreenContainer>
@@ -148,6 +150,16 @@ function getStyles(colors, typography) {
     },
     emptyContent: {
       flexGrow: 1,
+    },
+    loadingText: {
+      ...typography.body,
+      textAlign: "center",
+      marginTop: spacing.md,
+    },
+    comparisonNote: {
+      ...typography.body,
+      fontSize: 13,
+      marginBottom: spacing.md,
     },
     emptyBody: {
       flex: 1,
