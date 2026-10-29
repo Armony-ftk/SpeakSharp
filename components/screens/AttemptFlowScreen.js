@@ -14,6 +14,9 @@ import { getUploadErrorMessage, uploadRecordingAudio } from "../../services/audi
 import { getMetricsProgress, hasSavedTranscript } from "../../utils/metricsProgress";
 import { getAnalysisProgress, getAnalysisErrorMessage, getAnalysisRetryErrorMessage } from "../../utils/analysisProgress";
 import { requestAnalysisRetry } from "../../services/processingService";
+import { getSessionById } from "../../services/sessionService";
+import { hasRecordingFeedback } from "../../utils/recordingFeedback";
+import RecordingFeedbackView from "./RecordingFeedbackView";
 
 const PROCESSING_STEPS = [
   "Recording uploaded", "Transcript generated",
@@ -34,6 +37,7 @@ export default function AttemptFlowScreen() {
 
 function RecordingProcessing({ sessionId, recordingId }) {
   const [recording, setRecording] = useState(null);
+  const [session, setSession] = useState(null);
   const [uploadState, setUploadState] = useState("pending");
   const [uploadError, setUploadError] = useState("");
   const [listenerError, setListenerError] = useState("");
@@ -50,6 +54,18 @@ function RecordingProcessing({ sessionId, recordingId }) {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    let active = true;
+    getSessionById(sessionId).then((value) => {
+      if (active) setSession(value);
+    }).catch(() => {
+      // Title and target are optional; recording feedback remains available.
+      if (active) setSession(null);
+    });
+    return () => { active = false; };
+  }, [sessionId]);
 
   useEffect(() => {
     if (!sessionId || !recordingId) {
@@ -123,6 +139,32 @@ function RecordingProcessing({ sessionId, recordingId }) {
   const waiting = status === RECORDING_STATUS.PENDING_UPLOAD && uploadState === "done";
   const canRetryProcessing = (failed || waiting) && !hasSavedTranscript(recording) && !metricsProgress.failed;
   const goBack = () => router.replace({ pathname: "/session/[id]", params: { id: sessionId } });
+
+  if (!recording && !listenerError) {
+    return (
+      <ScreenContainer contentStyle={styles.centeredContent}>
+        <ActivityIndicator color={colors.accent} />
+        <Text style={styles.processingHint}>Loading recording...</Text>
+        <PrimaryButton label="Back to Session" onPress={goBack} style={styles.retryButton} />
+      </ScreenContainer>
+    );
+  }
+
+  if (status === RECORDING_STATUS.COMPLETED && !listenerError) {
+    if (hasRecordingFeedback(recording)) {
+      return <RecordingFeedbackView recording={recording} session={session} onBackToSession={goBack} />;
+    }
+    return (
+      <ScreenContainer>
+        <Text style={styles.processingTitle}>Feedback unavailable</Text>
+        <Text style={styles.processingHint}>
+          This recording is complete, but its feedback is missing or incomplete. Reconnect to check for saved updates.
+        </Text>
+        <PrimaryButton label="RECONNECT" onPress={() => setListenerVersion((value) => value + 1)} />
+        <PrimaryButton label="Back to Session" onPress={goBack} />
+      </ScreenContainer>
+    );
+  }
 
   return (
     <ScreenContainer contentStyle={styles.centeredContent}>
