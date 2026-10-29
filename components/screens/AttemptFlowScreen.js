@@ -12,10 +12,12 @@ import {
 } from "../../services/recordingService";
 import { getUploadErrorMessage, uploadRecordingAudio } from "../../services/audioUploadService";
 import { getMetricsProgress, hasSavedTranscript } from "../../utils/metricsProgress";
+import { getAnalysisProgress, getAnalysisErrorMessage, getAnalysisRetryErrorMessage } from "../../utils/analysisProgress";
+import { requestAnalysisRetry } from "../../services/processingService";
 
 const PROCESSING_STEPS = [
   "Recording uploaded", "Transcript generated",
-  "Speaking metrics calculated", "AI feedback not started",
+  "Speaking metrics calculated", "AI feedback generated",
 ];
 
 function firstParam(value) {
@@ -36,8 +38,11 @@ function RecordingProcessing({ sessionId, recordingId }) {
   const [uploadError, setUploadError] = useState("");
   const [listenerError, setListenerError] = useState("");
   const [listenerVersion, setListenerVersion] = useState(0);
+  const [retryingAnalysis, setRetryingAnalysis] = useState(false);
+  const [analysisRetryError, setAnalysisRetryError] = useState("");
   const mountedRef = useRef(true);
   const uploadInProgressRef = useRef(false);
+  const analysisRetryRef = useRef(false);
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
 
@@ -93,11 +98,27 @@ function RecordingProcessing({ sessionId, recordingId }) {
 
   useEffect(() => { void startUpload(); }, [startUpload]);
 
+  const retryAnalysis = async () => {
+    if (analysisRetryRef.current) return;
+    analysisRetryRef.current = true;
+    setRetryingAnalysis(true);
+    setAnalysisRetryError("");
+    try {
+      await requestAnalysisRetry(sessionId, recordingId);
+    } catch (error) {
+      if (mountedRef.current) setAnalysisRetryError(getAnalysisRetryErrorMessage(error?.code));
+    } finally {
+      analysisRetryRef.current = false;
+      if (mountedRef.current) setRetryingAnalysis(false);
+    }
+  };
+
   const status = recording?.processingStatus;
   const metricsProgress = getMetricsProgress(recording);
+  const analysisProgress = getAnalysisProgress(recording);
   const transcriptReady = hasSavedTranscript(recording)
     && ([RECORDING_STATUS.TRANSCRIPT_READY, RECORDING_STATUS.ANALYSING, RECORDING_STATUS.COMPLETED].includes(status)
-      || metricsProgress.failed);
+      || metricsProgress.failed || analysisProgress.failed);
   const failed = status === RECORDING_STATUS.FAILED;
   const waiting = status === RECORDING_STATUS.PENDING_UPLOAD && uploadState === "done";
   const canRetryProcessing = (failed || waiting) && !hasSavedTranscript(recording) && !metricsProgress.failed;
@@ -109,15 +130,20 @@ function RecordingProcessing({ sessionId, recordingId }) {
         <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
       </TouchableOpacity>
       <Text style={styles.processingTitle}>
-        {metricsProgress.ready ? "Speaking metrics ready" : transcriptReady ? "Transcription complete" : "Processing your recording"}
+        {analysisProgress.ready ? "Analysis complete" : failed ? "Processing failed"
+          : analysisProgress.active ? "Generating AI feedback" : metricsProgress.ready ? "Preparing AI feedback"
+            : transcriptReady ? "Transcription complete" : "Processing your recording"}
       </Text>
       {PROCESSING_STEPS.map((step, index) => {
-        const done = index === 0 ? uploadState === "done" : index === 1 ? transcriptReady : index === 2 && metricsProgress.ready;
+        const done = index === 0 ? uploadState === "done" : index === 1 ? transcriptReady
+          : index === 2 ? metricsProgress.ready : analysisProgress.ready;
         const active = !listenerError && (index === 0
           ? uploadState === "pending" || uploadState === "uploading"
-          : index === 1 ? status === RECORDING_STATUS.TRANSCRIBING : index === 2 && metricsProgress.active);
+          : index === 1 ? status === RECORDING_STATUS.TRANSCRIBING
+            : index === 2 ? metricsProgress.active : analysisProgress.active);
         const stepFailed = index === 0 ? uploadState === "error"
-          : index === 1 ? failed && !metricsProgress.failed : index === 2 && metricsProgress.failed;
+          : index === 1 ? failed && !metricsProgress.failed && !analysisProgress.failed
+            : index === 2 ? metricsProgress.failed : analysisProgress.failed;
         let label = step;
         if (index === 0 && active) label = "Uploading recording";
         if (index === 0 && stepFailed) label = "Recording upload failed";
@@ -127,6 +153,9 @@ function RecordingProcessing({ sessionId, recordingId }) {
         if (index === 2 && !done) label = "Waiting for speaking metrics";
         if (index === 2 && active) label = "Calculating metrics";
         if (index === 2 && stepFailed) label = "Speaking metrics failed";
+        if (index === 3 && !done) label = "Waiting for AI feedback";
+        if (index === 3 && active) label = "Generating AI feedback";
+        if (index === 3 && stepFailed) label = "AI analysis failed";
         return (
           <View key={step} style={styles.processingRow}>
             {done ? <Ionicons name="checkmark-circle" size={20} color={colors.success} />
@@ -152,10 +181,13 @@ function RecordingProcessing({ sessionId, recordingId }) {
       ) : failed ? (
         <Text style={styles.uploadErrorText}>{metricsProgress.failed
           ? "Speaking metrics could not be saved. Your transcript and audio are safe. Please contact the project administrator."
-          : getTranscriptionErrorMessage(recording.processingError?.code)}</Text>
+          : analysisProgress.failed ? getAnalysisErrorMessage(recording.processingError?.code)
+            : getTranscriptionErrorMessage(recording.processingError?.code)}</Text>
       ) : (
         <Text style={styles.processingHint}>
-          {metricsProgress.ready ? "Your transcript and speaking metrics are saved. AI feedback is not available yet."
+          {analysisProgress.ready ? "Your transcript, speaking metrics and AI feedback are saved."
+            : analysisProgress.active ? "Your AI feedback is being generated. You can leave this screen and return later. If this step stays active for more than six minutes, retry AI analysis."
+              : metricsProgress.ready ? "Your transcript and speaking metrics are saved. Waiting for AI analysis to start. If this takes more than six minutes, retry AI analysis."
             : transcriptReady ? "Your transcript is saved. Speaking metrics are being calculated."
             : waiting ? "Your upload is complete. Waiting for the transcription service. You can leave this screen and return later."
               : "This may take a moment. Your saved recording will be kept."}
@@ -164,6 +196,14 @@ function RecordingProcessing({ sessionId, recordingId }) {
       {canRetryProcessing && uploadState === "done" && !listenerError ? (
         <PrimaryButton label={failed ? "RETRY TRANSCRIPTION" : "RETRY PROCESSING"}
           onPress={() => startUpload(true)} style={styles.retryButton} />
+      ) : null}
+      {(analysisProgress.failed || analysisProgress.active
+        || (metricsProgress.ready && status === RECORDING_STATUS.TRANSCRIPT_READY)) && !listenerError ? (
+        <>
+          {analysisRetryError ? <Text style={styles.uploadErrorText}>{analysisRetryError}</Text> : null}
+          <PrimaryButton label="RETRY AI ANALYSIS" onPress={retryAnalysis}
+            loading={retryingAnalysis} loadingLabel="REQUESTING RETRY" style={styles.retryButton} />
+        </>
       ) : null}
       {transcriptReady ? (
         <View style={styles.transcriptCard}>

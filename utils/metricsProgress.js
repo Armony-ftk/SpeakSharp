@@ -21,7 +21,8 @@ export function getMetricsProgress(recording) {
     && Object.values(breakdown).reduce((total, count) => total + count, 0) === metrics.fillerCount
     && [null, "under", "close", "over"].includes(metrics.targetDurationStatus);
   const ready = hasSavedTranscript(recording) && validMetrics
-    && [RECORDING_STATUS.TRANSCRIPT_READY, RECORDING_STATUS.ANALYSING, RECORDING_STATUS.COMPLETED].includes(status);
+    && ([RECORDING_STATUS.TRANSCRIPT_READY, RECORDING_STATUS.ANALYSING, RECORDING_STATUS.COMPLETED].includes(status)
+      || (status === RECORDING_STATUS.FAILED && recording?.processingError?.stage === "analysis"));
 
   return {
     ready,

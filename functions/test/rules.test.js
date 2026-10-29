@@ -64,7 +64,8 @@ test("owner can create canonical metadata and upload a linked m4a; others cannot
 
 test("generated fields and forged statuses are rejected on create and update", async () => {
   for (const forged of [{ processingStatus: "transcript_ready" }, { transcript: { originalText: "fake" } },
-    { status: "pending_upload" }, { metrics: {} }, { analysis: {} }, { transcriptionJob: { generation: "123" } }]) {
+    { status: "pending_upload" }, { metrics: {} }, { analysis: {} }, { transcriptionJob: { generation: "123" } },
+    { aiFeedback: { overallRating: 10 } }, { analysisJob: { attempt: 1 } }, { processingStatus: "completed" }]) {
     const f = await setup();
     await denied(setDoc(f.reference, { ...f.data, ...forged }));
     await setDoc(f.reference, f.data);
@@ -162,6 +163,69 @@ test("real Firestore transactions deduplicate concurrent mocked transcription ev
   await process(event);
   assert.ok(version.isEqual((await adminDb.doc(f.path).get()).updateTime));
   await denied(updateDoc(f.reference, { "metrics.wordCount": 999 }));
+});
+
+test("real transactions carry transcription through metrics and analysis, deduplicate, and protect generated feedback", async () => {
+  const { createTranscriptionProcessor } = require("../transcriptionProcessor");
+  const { createAnalysisProcessor } = require("../analysisProcessor");
+  const { hasSavedFeedback } = require("../aiFeedback");
+  const f = await setup(); await setDoc(f.reference, f.data);
+  const originalText = "Today we discuss better presentation practice. Regular feedback helps students improve their explanations. Please practise a short speech and ask a friend for specific suggestions.";
+  const logger = { info() {}, warn() {}, error() {} };
+  const audio = Buffer.from("0000ftypM4A ");
+  const transcribe = createTranscriptionProcessor({ db: adminDb, bucketName: `${projectId}.appspot.com`, logger,
+    downloadAudio: async () => audio,
+    transcribe: async () => ({ metadata: { duration: 30 }, results: { channels: [{ alternatives: [{ transcript: originalText }] }] } }),
+  });
+  await transcribe({ data: { name: f.data.audioPath, bucket: `${projectId}.appspot.com`, generation: "150",
+    size: String(audio.length), contentType: "audio/mp4" } });
+  const metricsReady = await adminDb.doc(f.path).get();
+  let requests = 0;
+  const feedback = {
+    criteriaScores: Object.fromEntries(["clarity", "logicalStructure", "contentRelevance", "conciseness", "audienceOrientation"]
+      .map((key) => [key, { score: 8, feedback: "Specific test feedback." }])),
+    structureFeedback: Object.fromEntries(["introduction", "body", "conclusion"]
+      .map((key) => [key, { score: 7, feedback: "Specific structure feedback." }])),
+    strengths: ["Clear purpose.", "Concrete action.", "Concise."],
+    improvements: ["Add an example.", "Explain the feedback process.", "Explain how to measure progress."],
+    audienceQuestions: ["How often?", "Who gives feedback?", "How do I measure progress?"],
+    overallSummary: "Develop the practical advice with an example.",
+  };
+  const process = createAnalysisProcessor({ db: adminDb, logger, generate: async () => {
+    requests++;
+    assert.equal((await adminDb.doc(f.path).get()).data().processingStatus, "analysing");
+    return { text: JSON.stringify(feedback) };
+  } });
+  const event = { params: { userId: "owner", sessionId: "session", recordingId: f.id },
+    data: { before: { data: () => ({ processingStatus: "transcript_ready" }) }, after: metricsReady } };
+  await Promise.all([process(event), process(event), process(event)]);
+  await process(event);
+  const saved = (await getDoc(f.reference)).data();
+  assert.equal(requests, 1);
+  assert.equal(saved.processingStatus, "completed");
+  assert.ok(hasSavedFeedback(saved.aiFeedback));
+  assert.equal(saved.aiFeedback.overallRating, 8);
+  assert.equal(saved.transcript.originalText, originalText);
+  assert.deepEqual(saved.metrics, metricsReady.data().metrics);
+  const parent = (await adminDb.doc(sessionPath).get()).data();
+  assert.equal(parent.ratingSum, 8); assert.equal(parent.bestRating, 8); assert.equal(parent.latestRating, 8);
+  assert.equal(parent.attemptCount, 0);
+  await denied(updateDoc(f.reference, { "aiFeedback.overallRating": 10 }));
+  await denied(updateDoc(f.reference, { processingStatus: "transcript_ready" }));
+  await denied(updateDoc(doc(owner.db, sessionPath), { ratingSum: 999, updatedAt: serverTimestamp() }));
+  await updateDoc(doc(owner.db, sessionPath), { title: "Still editable", updatedAt: serverTimestamp() });
+
+  const olderId = "older-analysis-attempt";
+  const olderRef = adminDb.doc(`${sessionPath}/recordings/${olderId}`);
+  await olderRef.set({ ...metricsReady.data(), createdAt: new Date(0), processingStatus: "transcript_ready" });
+  const olderFeedback = structuredClone(feedback);
+  Object.values(olderFeedback.criteriaScores).forEach((item) => { item.score = 5; });
+  const olderProcess = createAnalysisProcessor({ db: adminDb, logger, generate: async () => ({ text: JSON.stringify(olderFeedback) }) });
+  const olderEvent = { ...event, params: { ...event.params, recordingId: olderId }, data: { ...event.data, after: await olderRef.get() } };
+  await Promise.all([olderProcess(olderEvent), olderProcess(olderEvent)]);
+  const finalParent = (await adminDb.doc(sessionPath).get()).data();
+  assert.equal(finalParent.latestRating, 8); assert.equal(finalParent.ratingSum, 13); assert.equal(finalParent.bestRating, 8);
+  assert.equal(finalParent.attemptCount, 0);
 });
 
 test("existing callable authentication and cascade remove both audio layouts and child documents", async () => {
