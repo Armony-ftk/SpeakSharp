@@ -6,7 +6,7 @@ const { transformFileSync } = require("@babel/core");
 
 // Use the existing Babel/Node test setup to exercise the real hook with snapshots.
 async function fixture() {
-  const { calculateProgress } = await import("../../utils/progressStats.js");
+  const stats = await import("../../utils/progressStats.js");
   const listeners = [], states = [];
   let user = { uid: "alice" }, cursor = 0, dependencies, pendingEffect, cleanup;
   let writes = 0;
@@ -39,7 +39,7 @@ async function fixture() {
     },
     "../config/firebase": { db: {} },
     "./useAuth": { useAuth: () => ({ currentUser: user, initializing: false }) },
-    "../utils/progressStats": { calculateProgress },
+    "../utils/progressStats": stats,
   };
   const filename = path.resolve(__dirname, "../../hooks/useProgress.js");
   const { code } = transformFileSync(filename, { babelrc: false, configFile: false,
@@ -83,7 +83,8 @@ test("waits for every initial collection, reuses listeners, and updates addition
   const writes = f.writes();
   f.emit(f.listeners[0], [{ id: "b", attemptCount: 900 }, { id: "a", latestRating: 0 }]);
   assert.equal(f.listeners.length, 3);
-  assert.equal(f.writes(), writes);
+  assert.equal(f.writes(), writes + 1); // Session metadata now updates Home/Profile too.
+  assert.equal(f.render().sessions.find((s) => s.id === "b").attemptCount, 1);
   f.emit(f.listeners[2], [rated("two", 4)]);
   assert.equal(f.render().progress.overview.average, 6);
   f.emit(f.listeners[1], []);
@@ -193,7 +194,7 @@ test("screen renders loading, retry, empty navigation, unrated attempts and the 
     "@expo/vector-icons": { Ionicons: "Icon" },
     "../../constants/theme": { radius: {}, spacing: {} },
     "../../constants/ThemeContext": { useAppTheme: () => ({ colors: {}, typography: {} }) },
-    "../../hooks/useProgress": { useProgress: () => state },
+    "../../context/AccountDataContext": { useAccountData: () => state },
     "../../utils/progressStats": stats,
     ...Object.fromEntries(["ScreenContainer", "AppHeader", "StatCard", "ProgressMetricCard", "EmptyState"]
       .map((name) => [`../ui/${name}`, name])),

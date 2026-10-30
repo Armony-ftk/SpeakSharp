@@ -13,11 +13,4 @@ export function updateProfile(patch) {
   return PROFILE;
 }
 
-export function getInitials(name) {
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0].toUpperCase())
-    .join('');
-}
+export { getInitials } from '../utils/profile';

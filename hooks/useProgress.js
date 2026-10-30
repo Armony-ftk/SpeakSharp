@@ -2,13 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { useAuth } from "./useAuth";
-import { calculateProgress } from "../utils/progressStats";
+import { calculateProgress, getSessionSummaries } from "../utils/progressStats";
 
 const EMPTY_PROGRESS = calculateProgress(0, []);
 
-export function useProgress() {
+export function useProgress(enabled = true) {
   const { currentUser, initializing } = useAuth();
-  const uid = currentUser?.uid ?? null;
+  const uid = enabled && !initializing ? currentUser?.uid ?? null : null;
   const [retryVersion, setRetryVersion] = useState(0);
   const [state, setState] = useState(null);
   const retry = useCallback(() => setRetryVersion((version) => version + 1), []);
@@ -46,6 +46,7 @@ export function useProgress() {
         return;
       }
       setState({ uid, retryVersion, loading: false, errorMessage: "",
+        sessions: getSessionSummaries(entries),
         progress: calculateProgress(sessions.size, entries.flatMap((session) => session.recordings)) });
     }
 
@@ -54,18 +55,20 @@ export function useProgress() {
       unsubscribeSessions = onSnapshot(collection(db, "users", uid, "sessions"), (snapshot) => {
         if (!active) return;
         const ids = new Set(snapshot.docs.map((document) => document.id));
-        let changed = false;
         for (const [id, session] of sessions) {
           if (!ids.has(id)) {
             sessions.delete(id);
             session.unsubscribe?.();
-            changed = true;
           }
         }
-        for (const id of ids) {
-          if (sessions.has(id)) continue;
-          changed = true;
-          const session = { recordings: null, unsubscribe: null };
+        for (const document of snapshot.docs) {
+          const id = document.id;
+          const data = { ...document.data(), id };
+          if (sessions.has(id)) {
+            sessions.get(id).data = data;
+            continue;
+          }
+          const session = { data, recordings: null, unsubscribe: null };
           sessions.set(id, session);
           try {
             session.unsubscribe = onSnapshot(collection(db, "users", uid, "sessions", id, "recordings"),
@@ -85,7 +88,7 @@ export function useProgress() {
             return;
           }
         }
-        if (changed || ids.size === 0) publish();
+        publish();
       }, fail);
     } catch (error) {
       fail(error);
@@ -96,6 +99,7 @@ export function useProgress() {
   // Hide the previous account synchronously, before effect cleanup runs.
   const current = uid && state?.uid === uid && state.retryVersion === retryVersion ? state : null;
   return {
+    sessions: current?.sessions ?? [],
     progress: current?.progress ?? EMPTY_PROGRESS,
     loading: initializing || Boolean(uid && (!current || current.loading)),
     errorMessage: current?.errorMessage ?? "",

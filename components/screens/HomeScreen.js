@@ -1,4 +1,3 @@
-import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -7,18 +6,16 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { router, useFocusEffect } from "expo-router";
+import { router } from "expo-router";
 import ScreenContainer from "../ui/ScreenContainer";
 import AppHeader from "../ui/AppHeader";
 import LogoMark from "../ui/LogoMark";
 import PrimaryButton from "../ui/PrimaryButton";
-import { getProfile } from "../../constants/mockProfile";
+import { useAccountData } from "../../context/AccountDataContext";
+import { getFullName } from "../../utils/profile";
+import { formatProgressRating } from "../../utils/progressStats";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
-import {
-  getSessionErrorMessage,
-  getSessions,
-} from "../../services/sessionService";
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -43,44 +40,14 @@ function getNextBestAction(sessionList) {
 export default function HomeScreen() {
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
-  const [profile, setProfile] = useState(() => getProfile());
-  const [sessions, setSessions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState("");
-
-  const loadSessions = useCallback(async () => {
-    setLoading(true);
-    setErrorMessage("");
-    try {
-      setSessions(await getSessions());
-    } catch (error) {
-      setErrorMessage(getSessionErrorMessage(error));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      setProfile({ ...getProfile() });
-      loadSessions();
-    }, [loadSessions]),
-  );
-
-  const firstName = profile.name.trim().split(" ")[0];
+  const { profile, sessions, progress, loading, errorMessage, retry,
+    profileLoading, profileErrorMessage, retryProfile } = useAccountData();
+  const firstName = getFullName(profile?.fullName).split(/\s+/)[0] || "there";
   const nextAction = getNextBestAction(sessions);
-  const totalAttempts = sessions.reduce(
-    (total, session) => total + (session.attemptCount ?? 0),
-    0,
-  );
-  const ratingSum = sessions.reduce(
-    (total, session) => total + (session.ratingSum ?? 0),
-    0,
-  );
-  const averageRating = totalAttempts > 0 ? ratingSum / totalAttempts : null;
+  const { overview } = progress;
   const displayedSessions = sessions.slice(0, 2);
 
-  if (loading && sessions.length === 0) {
+  if (loading || profileLoading) {
     return (
       <ScreenContainer contentStyle={styles.emptyContent}>
         <AppHeader />
@@ -92,7 +59,7 @@ export default function HomeScreen() {
     );
   }
 
-  if (sessions.length === 0) {
+  if (errorMessage || sessions.length === 0) {
     return (
       <ScreenContainer contentStyle={styles.emptyContent}>
         <AppHeader />
@@ -108,9 +75,15 @@ export default function HomeScreen() {
         <PrimaryButton
           label={errorMessage ? "TRY AGAIN" : nextAction.label}
           onPress={
-            errorMessage ? loadSessions : () => router.push(nextAction.route)
+            errorMessage ? retry : () => router.push(nextAction.route)
           }
         />
+        {profileErrorMessage ? (
+          <>
+            <Text style={styles.emptyDescription}>{profileErrorMessage}</Text>
+            <PrimaryButton label="RETRY PROFILE" onPress={retryProfile} />
+          </>
+        ) : null}
       </ScreenContainer>
     );
   }
@@ -142,6 +115,12 @@ export default function HomeScreen() {
       <Text style={styles.subtitle}>
         Ready to improve your next presentation?
       </Text>
+      {profileErrorMessage ? (
+        <>
+          <Text style={styles.emptyDescription}>{profileErrorMessage}</Text>
+          <PrimaryButton label="RETRY PROFILE" onPress={retryProfile} />
+        </>
+      ) : null}
 
       <TouchableOpacity
         style={styles.cta}
@@ -158,16 +137,16 @@ export default function HomeScreen() {
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
           <Text style={styles.statLabel}>Sessions</Text>
-          <Text style={styles.statValue}>{sessions.length}</Text>
+          <Text style={styles.statValue}>{overview.sessions}</Text>
         </View>
         <View style={styles.statCard}>
           <Text style={styles.statLabel}>Attempts</Text>
-          <Text style={styles.statValue}>{totalAttempts}</Text>
+          <Text style={styles.statValue}>{overview.attempts}</Text>
         </View>
         <View style={styles.statCard}>
           <Text style={styles.statLabel}>Avg Score</Text>
           <Text style={styles.statValue}>
-            {averageRating != null ? averageRating.toFixed(1) : "--"}
+            {formatProgressRating(overview.average)}
           </Text>
         </View>
       </View>
@@ -182,7 +161,7 @@ export default function HomeScreen() {
             activeOpacity={0.8}
           >
             <Text style={styles.sessionTitle} numberOfLines={1}>
-              {session.title}
+              {typeof session.title === "string" && session.title.trim() ? session.title : "Untitled session"}
             </Text>
             <Text style={styles.sessionMeta}>
               {session.attemptCount ?? 0} attempts

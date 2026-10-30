@@ -8,13 +8,13 @@ import ProgressMetricCard from "../ui/ProgressMetricCard";
 import EmptyState from "../ui/EmptyState";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
-import { useProgress } from "../../hooks/useProgress";
+import { useAccountData } from "../../context/AccountDataContext";
 import { formatProgressRating, getProgressCards, getProgressMessage } from "../../utils/progressStats";
 
 export default function ProgressScreen() {
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
-  const { progress, loading, errorMessage, retry } = useProgress();
+  const { progress, loading, errorMessage, retry } = useAccountData();
   const { overview, eligibleCount, undatedCount } = progress;
   const improvements = getProgressCards(progress);
 

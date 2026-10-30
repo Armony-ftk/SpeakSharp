@@ -38,9 +38,8 @@ function compare(previous, current, readValue, validate) {
   return { previous: previousAverage, current: currentAverage, delta: currentAverage - previousAverage };
 }
 
-export function calculateProgress(sessionCount, recordings) {
-  const rated = recordings.filter(validRating);
-  const chronological = rated.map((recording) => ({ recording, time: timestampParts(recording.createdAt) }))
+function chronologicalRatings(rated) {
+  return rated.map((recording) => ({ recording, time: timestampParts(recording.createdAt) }))
     .filter(({ time }) => time !== null)
     .sort((a, b) => {
       const timeOrder = a.time.seconds - b.time.seconds || a.time.nanoseconds - b.time.nanoseconds;
@@ -49,6 +48,28 @@ export function calculateProgress(sessionCount, recordings) {
       const bKey = `${b.recording.sessionId}/${b.recording.id}`;
       return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
     }).map(({ recording }) => recording);
+}
+
+// Home uses the same rating eligibility and recording chronology as Progress.
+export function getSessionSummaries(entries) {
+  return entries.map(({ data, recordings }) => {
+    const latest = chronologicalRatings(recordings.filter(validRating)).at(-1);
+    return { ...data, attemptCount: recordings.length, latestRating: latest?.aiFeedback.overallRating ?? null };
+  }).sort((a, b) => {
+    const aTime = timestampParts(a.updatedAt);
+    const bTime = timestampParts(b.updatedAt);
+    if (!aTime && bTime) return 1;
+    if (aTime && !bTime) return -1;
+    // Match getSessions' updatedAt descending order, including its ID tie-break.
+    const order = aTime && bTime
+      ? bTime.seconds - aTime.seconds || bTime.nanoseconds - aTime.nanoseconds : 0;
+    return order || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+  });
+}
+
+export function calculateProgress(sessionCount, recordings) {
+  const rated = recordings.filter(validRating);
+  const chronological = chronologicalRatings(rated);
   const enoughData = chronological.length >= PERIOD_SIZE * 2;
   const previous = enoughData ? chronological.slice(-PERIOD_SIZE * 2, -PERIOD_SIZE) : [];
   const current = enoughData ? chronological.slice(-PERIOD_SIZE) : [];

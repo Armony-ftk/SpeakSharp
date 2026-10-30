@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
 
-export default function ProfileStatCard({ icon, badgeLabel, label, value }) {
+export default function ProfileStatCard({ icon, badgeLabel, badgeTone = "positive", label, value }) {
   const { colors } = useAppTheme();
   const styles = getStyles(colors);
 
@@ -14,8 +14,8 @@ export default function ProfileStatCard({ icon, badgeLabel, label, value }) {
           <Ionicons name={icon} size={16} color={colors.navy} />
         </View>
         {badgeLabel ? (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{badgeLabel}</Text>
+          <View style={[styles.badge, badgeTone === "neutral" && styles.neutralBadge]}>
+            <Text style={[styles.badgeText, badgeTone === "neutral" && styles.neutralBadgeText]}>{badgeLabel}</Text>
           </View>
         ) : null}
       </View>
@@ -64,6 +64,12 @@ function getStyles(colors) {
       fontSize: 11,
       fontWeight: "700",
       color: colors.success,
+    },
+    neutralBadge: {
+      backgroundColor: colors.inputBackground,
+    },
+    neutralBadgeText: {
+      color: colors.textSecondary,
     },
     label: {
       fontSize: 12,

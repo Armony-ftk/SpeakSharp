@@ -6,6 +6,7 @@ import OfflineIndicator from '../components/ui/OfflineIndicator';
 import SplashScreen from '../components/screens/SplashScreen';
 import { ThemeProvider, useAppTheme } from '../constants/ThemeContext';
 import { AuthProvider } from '../context/AuthContext';
+import { AccountDataProvider } from '../context/AccountDataContext';
 import { useAuth } from '../hooks/useAuth';
 
 function RootLayoutNav() {
@@ -21,7 +22,7 @@ function RootLayoutNav() {
   const hasAppAccess = Boolean(currentUser) && isEmailVerified;
 
   return (
-    <>
+    <AccountDataProvider key={hasAppAccess ? currentUser.uid : 'signed-out'} enabled={hasAppAccess}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <View style={{ flex: 1 }}>
         <Stack
@@ -54,7 +55,7 @@ function RootLayoutNav() {
         </Stack>
         <OfflineIndicator />
       </View>
-    </>
+    </AccountDataProvider>
   );
 }
 
