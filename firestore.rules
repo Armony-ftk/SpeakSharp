@@ -6,14 +6,21 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
+    function activeProfile(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid))
+        && get(/databases/$(database)/documents/users/$(uid))
+          .data.get('disabled', false) != true;
+    }
+
     function validProfile(data) {
       return data.keys().hasAll(['fullName', 'email', 'createdAt'])
-        && data.keys().hasOnly(['fullName', 'email', 'createdAt'])
+        && data.keys().hasOnly(['fullName', 'email', 'createdAt', 'disabled'])
         && data.fullName is string
         && data.fullName.size() > 0
         && data.email is string
         && data.email.size() > 0
-        && data.createdAt is timestamp;
+        && data.createdAt is timestamp
+        && (!data.keys().hasAny(['disabled']) || data.disabled is bool);
     }
 
     function validSession(data) {
@@ -61,18 +68,30 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read: if isOwner(uid);
+      allow read: if isOwner(uid)
+        && resource.data.get('disabled', false) != true;
       allow create: if isOwner(uid)
         && validProfile(request.resource.data)
+        && !request.resource.data.keys().hasAny(['disabled'])
         && request.resource.data.createdAt == request.time;
       allow update: if isOwner(uid)
+        && resource.data.get('disabled', false) != true
         && validProfile(request.resource.data)
-        && request.resource.data.createdAt == resource.data.createdAt;
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.keys().hasAny(['disabled'])
+          == resource.data.keys().hasAny(['disabled'])
+        && request.resource.data.get('disabled', false)
+          == resource.data.get('disabled', false);
       allow delete: if false;
 
+    match /adminActivityLogs/{eventId} {
+      allow read, write: if false;
+    }
+
       match /sessions/{sessionId} {
-        allow read: if isOwner(uid);
+        allow read: if isOwner(uid) && activeProfile(uid);
         allow create: if isOwner(uid)
+          && activeProfile(uid)
           && validSession(request.resource.data)
           && request.resource.data.status == 'active'
           && request.resource.data.attemptCount == 0
@@ -82,6 +101,7 @@ service cloud.firestore {
           && request.resource.data.createdAt == request.time
           && request.resource.data.updatedAt == request.time;
         allow update: if isOwner(uid)
+          && activeProfile(uid)
           && validSession(request.resource.data)
           && request.resource.data.attemptCount == resource.data.attemptCount
           && request.resource.data.latestRating == resource.data.latestRating
@@ -91,6 +111,18 @@ service cloud.firestore {
           && request.resource.data.updatedAt == request.time;
         allow delete: if false;
       }
+    }
+
+    match /adminActivityLogs/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /adminAccountStatusOperations/{operationId} {
+      allow read, write: if false;
+    }
+
+    match /adminAccountStatusLocks/{userId} {
+      allow read, write: if false;
     }
   }
 }

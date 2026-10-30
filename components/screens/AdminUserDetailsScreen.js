@@ -21,6 +21,10 @@ import {
   getUserDetails,
   setUserDisabled,
 } from "../../services/adminService";
+import { createAccountStatusOperationStore } from "../../services/accountStatusOperationStore";
+import { createOperationId } from "../../services/operationId";
+
+const accountStatusOperationStore = createAccountStatusOperationStore();
 
 function getErrorState(error) {
   if (error?.code === "not-found") {
@@ -115,9 +119,13 @@ export default function AdminUserDetailsScreen({ userId }) {
   const [successMessage, setSuccessMessage] = useState("");
   const [isOffline, setIsOffline] = useState(false);
   const [actionForbidden, setActionForbidden] = useState(false);
+  const [operationAttemptLoading, setOperationAttemptLoading] = useState(true);
+  const [operationAttemptError, setOperationAttemptError] = useState(false);
   const requestIdRef = useRef(0);
   const actionPendingRef = useRef(false);
   const actionRequestIdRef = useRef(0);
+  const operationAttemptRequestIdRef = useRef(0);
+  const accountOperationRef = useRef(null);
   const activeUserIdRef = useRef(userId);
   activeUserIdRef.current = userId;
 
@@ -125,6 +133,9 @@ export default function AdminUserDetailsScreen({ userId }) {
     const requestId = ++requestIdRef.current;
     actionRequestIdRef.current += 1;
     actionPendingRef.current = false;
+    if (accountOperationRef.current?.userId !== userId) {
+      accountOperationRef.current = null;
+    }
     setUser(null);
     setLoadState("loading");
     setShowConfirmation(false);
@@ -167,6 +178,58 @@ export default function AdminUserDetailsScreen({ userId }) {
     };
   }, [userId, retryCount]);
 
+  useEffect(() => {
+    const operationAttemptRequestId = ++operationAttemptRequestIdRef.current;
+    setOperationAttemptLoading(true);
+    setOperationAttemptError(false);
+
+    if (!userId) {
+      accountOperationRef.current = null;
+      setOperationAttemptLoading(false);
+      return () => {
+        operationAttemptRequestIdRef.current += 1;
+      };
+    }
+
+    accountStatusOperationStore
+      .load(userId)
+      .then((operation) => {
+        if (
+          operationAttemptRequestId !== operationAttemptRequestIdRef.current ||
+          activeUserIdRef.current !== userId
+        ) {
+          return;
+        }
+
+        accountOperationRef.current = operation;
+        setOperationAttemptLoading(false);
+      })
+      .catch((error) => {
+        if (__DEV__) {
+          console.warn("Could not load the pending account-status operation", error);
+        }
+        if (
+          operationAttemptRequestId !== operationAttemptRequestIdRef.current ||
+          activeUserIdRef.current !== userId
+        ) {
+          return;
+        }
+
+        accountOperationRef.current = null;
+        setOperationAttemptError(true);
+        setOperationAttemptLoading(false);
+        setActionError(
+          "A pending account operation could not be loaded. Account changes are disabled until this is resolved.",
+        );
+      });
+
+    return () => {
+      if (operationAttemptRequestId === operationAttemptRequestIdRef.current) {
+        operationAttemptRequestIdRef.current += 1;
+      }
+    };
+  }, [userId, retryCount]);
+
   useEffect(
     () => () => {
       requestIdRef.current += 1;
@@ -189,6 +252,8 @@ export default function AdminUserDetailsScreen({ userId }) {
   const isSuspended = user?.accountStatus === "suspended";
   const canManageAccount =
     loadState === "success" &&
+    !operationAttemptLoading &&
+    !operationAttemptError &&
     !isOffline &&
     !actionForbidden &&
     (user?.accountStatus === "active" || isSuspended);
@@ -220,9 +285,51 @@ export default function AdminUserDetailsScreen({ userId }) {
     setSuccessMessage("");
 
     const shouldDisable = user.accountStatus === "active";
+    const existingOperation = accountOperationRef.current;
+    if (
+      existingOperation &&
+      (existingOperation.userId !== userId ||
+        existingOperation.requestedDisabled !== shouldDisable)
+    ) {
+      setShowConfirmation(false);
+      setActionError(
+        "An unresolved account operation exists for this user. Trusted recovery is required before starting a different action.",
+      );
+      actionPendingRef.current = false;
+      setIsSavingStatus(false);
+      return;
+    }
+
+    let operation = existingOperation;
+    if (!operation) {
+      try {
+        operation = {
+          userId,
+          requestedDisabled: shouldDisable,
+          operationId: createOperationId(),
+        };
+        await accountStatusOperationStore.save(operation);
+        accountOperationRef.current = operation;
+      } catch (error) {
+        if (__DEV__) {
+          console.warn("Could not save the pending account-status operation", error);
+        }
+        setShowConfirmation(false);
+        setActionError(
+          "Could not save the account operation. No account change was sent. Try again.",
+        );
+        actionPendingRef.current = false;
+        setIsSavingStatus(false);
+        return;
+      }
+    }
 
     try {
-      const result = await setUserDisabled(userId, shouldDisable);
+      const result = await setUserDisabled(
+        userId,
+        shouldDisable,
+        operation.operationId,
+      );
       if (
         actionRequestId !== actionRequestIdRef.current ||
         activeUserIdRef.current !== userId
@@ -240,6 +347,22 @@ export default function AdminUserDetailsScreen({ userId }) {
       );
       setIsOffline(false);
       setShowConfirmation(false);
+      if (accountOperationRef.current === operation) {
+        try {
+          await accountStatusOperationStore.clear(userId);
+          accountOperationRef.current = null;
+        } catch (clearError) {
+          if (__DEV__) {
+            console.warn(
+              "Account status succeeded but the local retry record could not be cleared",
+              clearError,
+            );
+          }
+          setActionError(
+            "Account status updated successfully, but the local retry record could not be cleared.",
+          );
+        }
+      }
     } catch (error) {
       if (__DEV__) {
         console.warn("Could not update admin user account status", error);
@@ -257,14 +380,47 @@ export default function AdminUserDetailsScreen({ userId }) {
       if (state === "forbidden") {
         setActionForbidden(true);
       }
-      setActionError(
-        state === "offline"
-          ? "Admin information requires an internet connection. The account status was not changed."
-          : state === "forbidden"
-            ? "Access denied. The account status was not changed."
-            : "Couldn’t update account status. The previous status is unchanged.",
-      );
       setShowConfirmation(false);
+      setActionError(
+        "Account update may be incomplete. Verifying the current account status…",
+      );
+
+      let statusVerified = false;
+
+      try {
+        const refreshedUser = await getUserDetails(userId);
+
+        if (
+          actionRequestId !== actionRequestIdRef.current ||
+          activeUserIdRef.current !== userId
+        ) {
+          return;
+        }
+
+        setUser(refreshedUser);
+        setIsOffline(false);
+        statusVerified = true;
+      } catch (verificationError) {
+        if (__DEV__) {
+          console.warn(
+            "Could not verify admin user account status after an update failure",
+            verificationError,
+          );
+        }
+      }
+
+      if (
+        actionRequestId !== actionRequestIdRef.current ||
+        activeUserIdRef.current !== userId
+      ) {
+        return;
+      }
+
+      setActionError(
+        statusVerified
+          ? "Account update could not be completed. The current status was refreshed from the server."
+          : "Account update may be incomplete. The current account status could not be verified. Try again.",
+      );
     } finally {
       if (actionRequestId === actionRequestIdRef.current) {
         actionPendingRef.current = false;
@@ -367,9 +523,14 @@ export default function AdminUserDetailsScreen({ userId }) {
             </View>
           </View>
 
-          <Text style={styles.sectionTitle}>Recent Activity</Text>
-          {Array.isArray(user.recentActivity) &&
-          user.recentActivity.length > 0 ? (
+        <Text style={styles.sectionTitle}>Recent Activity</Text>
+          {!Array.isArray(user.recentActivity) ? (
+            <EmptyState
+              icon="time-outline"
+              title="Recent activity unavailable"
+              description="Activity data is not available yet."
+            />
+          ) : user.recentActivity.length > 0 ? (
             <View style={styles.activityList}>
               {user.recentActivity.slice(0, 5).map((event, index) => (
                 <ActivityRow

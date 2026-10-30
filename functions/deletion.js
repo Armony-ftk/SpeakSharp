@@ -1,4 +1,5 @@
 const { getFirestore } = require("firebase-admin/firestore");
+const { getAuth } = require("firebase-admin/auth");
 const { initializeApp } = require("firebase-admin/app");
 const { getStorage } = require("firebase-admin/storage");
 const { logger } = require("firebase-functions");
@@ -8,14 +9,13 @@ initializeApp();
 
 const db = getFirestore();
 
-const deleteSession = onCall(
-  {
-    region: "us-central1",
-    invoker: "public",
-    timeoutSeconds: 120,
-    memory: "256MiB",
-  },
-  async (request) => {
+function createDeleteSessionHandler({
+  getAuth: getAuthDependency = getAuth,
+  getDb = () => db,
+  getStorage: getStorageDependency = getStorage,
+  loggerDependency = logger,
+} = {}) {
+  return async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
       throw new HttpsError("unauthenticated", "Authentication is required.");
@@ -31,7 +31,51 @@ const deleteSession = onCall(
     }
 
     const normalizedId = sessionId.trim();
-    const sessionReference = db.doc(
+    const authService = getAuthDependency();
+    const firestore = getDb();
+
+    let authUser;
+
+    try {
+      authUser = await authService.getUser(uid);
+    } catch (error) {
+      if (error?.code === "auth/user-not-found") {
+        throw new HttpsError("permission-denied", "Access is denied.");
+      }
+
+      loggerDependency.error("Session deletion authorization failed", {
+        uid,
+        error,
+      });
+      throw new HttpsError("internal", "The session could not be deleted.");
+    }
+
+    if (authUser.disabled) {
+      throw new HttpsError("permission-denied", "Access is denied.");
+    }
+
+    const profileReference = firestore.doc(`users/${uid}`);
+    let profileSnapshot;
+
+    try {
+      profileSnapshot = await profileReference.get();
+    } catch (error) {
+      loggerDependency.error("Session deletion profile check failed", {
+        uid,
+        error,
+      });
+      throw new HttpsError("internal", "The session could not be deleted.");
+    }
+
+    if (!profileSnapshot.exists) {
+      throw new HttpsError("not-found", "The user profile does not exist.");
+    }
+
+    if (profileSnapshot.data()?.disabled === true) {
+      throw new HttpsError("permission-denied", "Access is denied.");
+    }
+
+    const sessionReference = firestore.doc(
       `users/${uid}/sessions/${normalizedId}`,
     );
 
@@ -43,24 +87,37 @@ const deleteSession = onCall(
 
       const recordingPrefix =
         `users/${uid}/sessions/${normalizedId}/recordings/`;
-      await getStorage().bucket().deleteFiles({
+      await getStorageDependency().bucket().deleteFiles({
         prefix: recordingPrefix,
         force: true,
       });
 
-      await db.recursiveDelete(sessionReference);
-      logger.info("Practice session deleted", { uid, sessionId: normalizedId });
+      await firestore.recursiveDelete(sessionReference);
+      loggerDependency.info("Practice session deleted", {
+        uid,
+        sessionId: normalizedId,
+      });
       return { success: true, sessionId: normalizedId };
     } catch (error) {
       if (error instanceof HttpsError) throw error;
-      logger.error("Practice session deletion failed", {
+      loggerDependency.error("Practice session deletion failed", {
         uid,
         sessionId: normalizedId,
         error,
       });
       throw new HttpsError("internal", "The session could not be deleted.");
     }
+  };
+}
+
+const deleteSession = onCall(
+  {
+    region: "us-central1",
+    invoker: "public",
+    timeoutSeconds: 120,
+    memory: "256MiB",
   },
+  createDeleteSessionHandler(),
 );
 
-module.exports = { deleteSession };
+module.exports = { createDeleteSessionHandler, deleteSession };

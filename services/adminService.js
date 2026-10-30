@@ -1,5 +1,11 @@
+import { getFunctions, httpsCallable } from "firebase/functions";
+import { app } from "../config/firebase";
+
+const activityFunctions = getFunctions(app, "us-central1");
 const MOCK_DELAY_MS = 350;
 const MOCK_SCENARIOS = ["success", "empty", "error", "offline", "forbidden"];
+const MOCK_ADMIN_NAME = "Admin A";
+
 let mockScenario = "success";
 
 const mockUsers = [
@@ -92,13 +98,32 @@ async function prepareResponse() {
 
 function matchesUser(user, search, status) {
   const normalizedSearch = search?.trim().toLowerCase();
+
   const matchesSearch =
     !normalizedSearch ||
     user.fullName.toLowerCase().includes(normalizedSearch) ||
     user.email.toLowerCase().includes(normalizedSearch);
-  const matchesStatus = !status || status === "all" || user.accountStatus === status;
+
+  const matchesStatus =
+    !status || status === "all" || user.accountStatus === status;
 
   return matchesSearch && matchesStatus;
+}
+
+function createAdminAuditEvent(user, action) {
+  const occurredAt = new Date().toISOString();
+
+  return {
+    id: `admin_evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    userId: user.userId,
+    userName: user.fullName,
+    type: "Admin",
+    action,
+    actorName: MOCK_ADMIN_NAME,
+    label: `${MOCK_ADMIN_NAME} ${action} ${user.fullName}`,
+    occurredAt,
+    status: "success",
+  };
 }
 
 export function setMockScenario(scenario) {
@@ -112,27 +137,33 @@ export function setMockScenario(scenario) {
 }
 
 export async function getAdminStats() {
-  await prepareResponse();
-
-  if (mockScenario === "empty") {
-    return {
-      totalUsers: 0,
-      totalSessions: 0,
-      totalRecordings: 0,
-      recentlyActiveUsers: 0,
-      activityWindowDays: 7,
-      recentActivity: [],
+  try {
+    const callable = httpsCallable(activityFunctions, "getAdminStats");
+    const result = await callable({});
+    return result.data;
+  } catch (error) {
+    const normalizedCodes = {
+      "functions/permission-denied": "permission-denied",
+      "functions/unauthenticated": "permission-denied",
+      "functions/unavailable": "unavailable",
+      "auth/network-request-failed": "unavailable",
     };
-  }
 
-  return {
-    totalUsers: mockUsers.length,
-    totalSessions: 8,
-    totalRecordings: 19,
-    recentlyActiveUsers: 2,
-    activityWindowDays: 7,
-    recentActivity: mockEvents.slice(0, 3),
-  };
+    const normalizedCode = normalizedCodes[error?.code];
+
+    if (!normalizedCode) {
+      throw error;
+    }
+
+    const normalizedError = new Error(
+      error.message || "Admin statistics request failed.",
+    );
+
+    normalizedError.code = normalizedCode;
+    normalizedError.details = error.details;
+
+    throw normalizedError;
+  }
 }
 
 export async function getUsers({
@@ -141,106 +172,157 @@ export async function getUsers({
   pageSize = 20,
   cursor = null,
 } = {}) {
-  await prepareResponse();
+  try {
+    const callable = httpsCallable(activityFunctions, "getUsers");
 
-  if (mockScenario === "empty") {
-    return { items: [], nextCursor: null, total: 0 };
+    const result = await callable({
+      search,
+      status,
+      pageSize,
+      cursor,
+    });
+
+    return result.data;
+  } catch (error) {
+    const normalizedCodes = {
+      "functions/permission-denied": "permission-denied",
+      "functions/unauthenticated": "permission-denied",
+      "functions/unavailable": "unavailable",
+      "auth/network-request-failed": "unavailable",
+      "functions/invalid-argument": "invalid-argument",
+    };
+
+    const normalizedCode = normalizedCodes[error?.code];
+
+    if (!normalizedCode) {
+      throw error;
+    }
+
+    const normalizedError = new Error(
+      error.message || "User directory request failed.",
+    );
+
+    normalizedError.code = normalizedCode;
+    normalizedError.details = error.details;
+
+    throw normalizedError;
   }
-
-  const filteredUsers = mockUsers.filter((user) =>
-    matchesUser(user, search, status),
-  );
-  const startIndex = cursor ? Number(cursor) : 0;
-  const items = filteredUsers.slice(startIndex, startIndex + pageSize);
-  const nextIndex = startIndex + items.length;
-
-  return {
-    items: items.map(({ totalRecordings, ...user }) => user),
-    nextCursor: nextIndex < filteredUsers.length ? String(nextIndex) : null,
-    total: filteredUsers.length,
-  };
 }
 
 export async function getUserDetails(userId) {
-  await prepareResponse();
+  try {
+    const callable = httpsCallable(activityFunctions, "getUserDetails");
+    const result = await callable({ userId });
 
-  if (mockScenario === "empty") {
-    throw createScenarioError("not-found", "User not found.");
-  }
-
-  const user = mockUsers.find((item) => item.userId === userId);
-  if (!user) {
-    throw createScenarioError("not-found", "User not found.");
-  }
-
-  return {
-    userId: user.userId,
-    fullName: user.fullName,
-    email: user.email,
-    accountStatus: user.accountStatus,
-    createdAt: user.createdAt,
-    totalSessions: user.totalSessions,
-    totalRecordings: user.totalRecordings,
-    recentActivity: mockEvents.filter((event) => event.userId === userId),
-  };
-}
-
-export async function getActivityLogs({
-  type = "all",
-  userId,
-  pageSize = 20,
-  cursor = null,
-} = {}) {
-  await prepareResponse();
-
-  if (mockScenario === "empty") {
-    return { events: [], nextCursor: null };
-  }
-
-  const filteredEvents = mockEvents.filter((event) => {
-    const matchesUser = !userId || event.userId === userId;
-    const normalizedType = type.toLowerCase();
-    const typePrefixes = {
-      sessions: "session_",
-      recordings: "recording_",
-      analysis: "analysis_",
+    return result.data;
+  } catch (error) {
+    const normalizedCodes = {
+      "functions/permission-denied": "permission-denied",
+      "functions/unauthenticated": "permission-denied",
+      "functions/unavailable": "unavailable",
+      "functions/not-found": "not-found",
+      "functions/invalid-argument": "invalid-argument",
+      "auth/network-request-failed": "unavailable",
     };
-    const matchesType =
-      normalizedType === "all" ||
-      (normalizedType === "errors"
-        ? event.status === "failed"
-        : Boolean(typePrefixes[normalizedType]) &&
-          event.type.startsWith(typePrefixes[normalizedType]));
 
-    return matchesUser && matchesType;
-  });
-  const startIndex = cursor ? Number(cursor) : 0;
-  const events = filteredEvents.slice(startIndex, startIndex + pageSize);
-  const nextIndex = startIndex + events.length;
+    const normalizedCode = normalizedCodes[error?.code];
 
-  return {
-    events,
-    nextCursor: nextIndex < filteredEvents.length ? String(nextIndex) : null,
-  };
+    if (!normalizedCode) {
+      throw error;
+    }
+
+    const normalizedError = new Error(
+      error.message || "User details request failed.",
+    );
+
+    normalizedError.code = normalizedCode;
+    normalizedError.details = error.details;
+
+    throw normalizedError;
+  }
 }
 
-export async function setUserDisabled(userId, disabled) {
-  await prepareResponse();
+export async function getActivityLogs(params = {}) {
+  try {
+    const getActivityLogsCallable = httpsCallable(
+      activityFunctions,
+      "getActivityLogs",
+    );
 
-  if (mockScenario === "empty") {
-    throw createScenarioError("not-found", "User not found.");
+    const response = await getActivityLogsCallable({
+      type: params.type ?? "all",
+      userId: params.userId ?? null,
+      pageSize: params.pageSize ?? 20,
+      cursor: params.cursor ?? null,
+    });
+
+    const data = response.data;
+
+    if (
+      !data ||
+      !Array.isArray(data.events) ||
+      !Object.prototype.hasOwnProperty.call(data, "nextCursor")
+    ) {
+      throw new Error("The activity response has an invalid format.");
+    }
+
+    return data;
+  } catch (error) {
+    const normalizedCodes = {
+      "functions/permission-denied": "permission-denied",
+      "functions/unauthenticated": "permission-denied",
+      "functions/unavailable": "unavailable",
+      "auth/network-request-failed": "unavailable",
+    };
+
+    const normalizedCode = normalizedCodes[error?.code];
+
+    if (!normalizedCode) {
+      throw error;
+    }
+
+    const normalizedError = new Error(
+      error.message || "Admin activity request failed.",
+    );
+
+    normalizedError.code = normalizedCode;
+    normalizedError.details = error.details;
+
+    throw normalizedError;
   }
+}
 
-  const user = mockUsers.find((item) => item.userId === userId);
-  if (!user) {
-    throw createScenarioError("not-found", "User not found.");
+export async function setUserDisabled(userId, disabled, operationId) {
+  try {
+    const callable = httpsCallable(
+      activityFunctions,
+      "setUserDisabled",
+    );
+    const result = await callable({ userId, disabled, operationId });
+    return result.data;
+  } catch (error) {
+    const normalizedCodes = {
+      "functions/permission-denied": "permission-denied",
+      "functions/unauthenticated": "permission-denied",
+      "functions/unavailable": "unavailable",
+      "functions/not-found": "not-found",
+      "functions/invalid-argument": "invalid-argument",
+      "auth/network-request-failed": "unavailable",
+    };
+
+    const normalizedCode = normalizedCodes[error?.code];
+
+    if (!normalizedCode) {
+      throw error;
+    }
+
+    const normalizedError = new Error(
+      error.message || "Unable to update account status.",
+    );
+
+    normalizedError.code = normalizedCode;
+    normalizedError.details = error.details;
+
+    throw normalizedError;
   }
-
-  user.accountStatus = disabled ? "suspended" : "active";
-
-  return {
-    userId: user.userId,
-    accountStatus: user.accountStatus,
-    updatedAt: new Date().toISOString(),
-  };
 }

@@ -6,13 +6,18 @@ import { useAuth } from "../../hooks/useAuth";
 import { useAdminAccess } from "../../hooks/useAdminAccess";
 
 export default function AdminLayout() {
-  const { currentUser, initializing, isEmailVerified } = useAuth();
+  const {
+    currentUser,
+    initializing,
+    isEmailVerified,
+    role,
+    roleLoading,
+  } = useAuth();
+
   const { status, retry } = useAdminAccess();
   const { colors, typography } = useAppTheme();
-  // DEV-ONLY: remove before handoff
-  const devAdminBypass = __DEV__ && status === "allowed";
 
-  if (initializing || status === "checking") {
+  if (initializing || roleLoading || status === "checking") {
     return (
       <View style={[styles.message, { backgroundColor: colors.background }]}>
         <Text style={[typography.body, { color: colors.textPrimary }]}>
@@ -22,16 +27,12 @@ export default function AdminLayout() {
     );
   }
 
-  if (!devAdminBypass && !currentUser) {
+  if (!currentUser) {
     return <Redirect href="/sign-in" />;
   }
 
-  if (!devAdminBypass && !isEmailVerified) {
+  if (!isEmailVerified) {
     return <Redirect href="/verify-email" />;
-  }
-
-  if (status === "denied") {
-    return <Redirect href="/home" />;
   }
 
   if (status === "error") {
@@ -43,6 +44,11 @@ export default function AdminLayout() {
         <PrimaryButton label="Retry" onPress={retry} />
       </View>
     );
+  }
+
+  // Fail closed: both checks must explicitly succeed.
+  if (role !== "admin" || status !== "allowed") {
+    return <Redirect href="/home" />;
   }
 
   return (

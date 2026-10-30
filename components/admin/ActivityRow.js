@@ -1,3 +1,4 @@
+
 import { StyleSheet, Text, View } from "react-native";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
@@ -15,32 +16,51 @@ function getStatusLabel(status) {
   if (status === "failed") {
     return "Failed";
   }
+
   if (status === "success") {
     return "Completed";
   }
+
   return "—";
 }
 
 export default function ActivityRow({ event }) {
   const { colors } = useAppTheme();
   const statusLabel = getStatusLabel(event.status);
+  const isAdminEvent = event.type?.toLowerCase() === "admin";
+
+  const displayLabel = isAdminEvent
+    ? event.label ||
+      `${event.actorName || "Admin"} ${
+        event.action || "performed an action on"
+      } ${event.userName || "a user"}`
+    : event.label || "—";
 
   return (
     <View style={[styles.row, { borderBottomColor: colors.border }]}>
       <View style={styles.content}>
         <Text style={[styles.label, { color: colors.navy }]}>
-          {event.label || "—"}
+          {displayLabel}
         </Text>
+
+        {isAdminEvent && event.action ? (
+          <Text style={[styles.detail, { color: colors.textSecondary }]}>
+            Action: {event.action}
+          </Text>
+        ) : null}
+
         <Text style={[styles.timestamp, { color: colors.textSecondary }]}>
           {formatTimestamp(event.occurredAt)}
         </Text>
       </View>
+
       <View
         style={[
           styles.status,
           {
             backgroundColor: colors.card,
-            borderColor: event.status === "failed" ? "#D92D20" : colors.cardBorder,
+            borderColor:
+              event.status === "failed" ? "#D92D20" : colors.cardBorder,
           },
         ]}
         accessibilityLabel={`Activity status: ${statusLabel}`}
@@ -48,7 +68,10 @@ export default function ActivityRow({ event }) {
         <Text
           style={[
             styles.statusLabel,
-            { color: event.status === "failed" ? "#D92D20" : colors.navySoft },
+            {
+              color:
+                event.status === "failed" ? "#D92D20" : colors.navySoft,
+            },
           ]}
         >
           {statusLabel}
@@ -74,6 +97,10 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: "600",
+    flexShrink: 1,
+  },
+  detail: {
+    fontSize: 12,
     flexShrink: 1,
   },
   timestamp: {

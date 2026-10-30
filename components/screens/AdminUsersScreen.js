@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import EmptyState from "../ui/EmptyState";
 import FilterTabs from "../ui/FilterTabs";
@@ -159,6 +159,12 @@ export default function AdminUsersScreen() {
     setLoadState("loading");
     setRetryCount((count) => count + 1);
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      setRetryCount((count) => count + 1);
+    }, []),
+  );
 
   const clearFilters = useCallback(() => {
     requestIdRef.current += 1;

@@ -6,27 +6,38 @@
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "12.0.1",
-    "expo": "~57.0.20",
-    "expo-blur": "~57.0.2",
-    "expo-constants": "~57.0.17",
-    "expo-font": "~57.0.3",
-    "expo-linking": "~57.0.9",
-    "expo-router": "~57.0.19",
-    "expo-status-bar": "~57.0.1",
+    "expo": "^58.0.0",
+    "expo-blur": "~58.0.5",
+    "expo-constants": "~58.0.14",
+    "expo-font": "~58.0.11",
+    "expo-linking": "~58.0.15",
+    "expo-router": "~58.0.28",
+    "expo-status-bar": "~58.0.4",
     "firebase": "^12.19.0",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "react-native": "0.86.3",
-    "react-native-safe-area-context": "~5.7.0",
-    "react-native-screens": "~4.26.0",
-    "react-native-svg": "15.15.4",
-    "react-native-web": "^0.21.2"
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "~5.10.1",
+    "react-native-screens": "~4.30.0",
+    "react-native-svg": "15.16.0",
+    "react-native-web": "^0.21.4"
   },
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test:rules": "firebase emulators:exec --project speaksharp-firestore-rules-test --only firestore \"node --test tests/firestore.rules.test.js\"",
+    "test:components": "jest --config jest.component.config.js components/screens/AdminUserDetailsScreen.test.js"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "@react-native/jest-preset": "^0.88.1",
+    "@testing-library/react-native": "^14.0.0",
+    "firebase-tools": "^15.34.2",
+    "jest": "^30.5.2",
+    "jest-expo": "^58.0.13",
+    "react-test-renderer": "^19.3.0"
+  }
 }

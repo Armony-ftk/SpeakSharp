@@ -2,12 +2,15 @@ import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAppTheme } from "../../../constants/ThemeContext";
 
+export const unstable_settings = {
+  anchor: "index",
+};
+
 export default function AdminTabsLayout() {
   const { colors } = useAppTheme();
 
   return (
     <Tabs
-      initialRouteName="index"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.navy,

@@ -7,7 +7,6 @@
   },
   "dependencies": {
     "firebase-admin": "^14.5.0",
-    "firebase-functions": "^7.4.0",
-    "speaksharp_app": "file:.."
+    "firebase-functions": "^7.4.0"
   }
 }

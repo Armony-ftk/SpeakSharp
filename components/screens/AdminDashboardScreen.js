@@ -8,13 +8,14 @@ import {
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import EmptyState from "../ui/EmptyState";
+import AdminHeader from "../admin/AdminHeader";
 import PrimaryButton from "../ui/PrimaryButton";
 import ScreenContainer from "../ui/ScreenContainer";
 import StatCard from "../ui/StatCard";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
-import { useAuth } from "../../hooks/useAuth";
 import { getAdminStats } from "../../services/adminService";
+
 
 const STATISTICS = [
   { key: "totalUsers", label: "Total Users" },
@@ -48,34 +49,7 @@ function formatTimestamp(value) {
 }
 
 function formatMetric(value) {
-  return value == null ? "—" : String(value);
-}
-
-function DashboardHeader({ styles, colors, isSignedIn }) {
-  return (
-    <View style={styles.header}>
-      <View style={styles.headerText}>
-        <Text style={styles.title}>Admin Dashboard</Text>
-        <Text style={styles.subtitle}>Overview of SpeakSharp</Text>
-      </View>
-      <View style={styles.headerActions}>
-        <View style={styles.adminBadge}>
-          <Text style={styles.adminBadgeText}>Admin</Text>
-        </View>
-        {isSignedIn ? (
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Open account settings and sign out"
-            style={styles.settingsButton}
-            onPress={() => router.push("/settings")}
-          >
-            <Ionicons name="log-out-outline" size={20} color={colors.navy} />
-            <Text style={styles.settingsButtonText}>Account / Sign Out</Text>
-          </TouchableOpacity>
-        ) : null}
-      </View>
-    </View>
-  );
+  return value == null ? "Unavailable" : String(value);
 }
 
 function LoadingStatistics({ colors, typography, styles }) {
@@ -138,6 +112,16 @@ function Statistics({ stats, styles }) {
 }
 
 function RecentActivity({ events, styles, colors }) {
+  if (!Array.isArray(events)) {
+    return (
+      <EmptyState
+        icon="time-outline"
+        title="Recent activity unavailable"
+        description="Recent platform activity is not available right now."
+      />
+    );
+  }
+
   if (events.length === 0) {
     return (
       <EmptyState
@@ -213,7 +197,6 @@ function RecentActivity({ events, styles, colors }) {
 
 export default function AdminDashboardScreen() {
   const { colors, typography } = useAppTheme();
-  const { currentUser } = useAuth();
   const styles = getStyles(colors, typography);
   const [stats, setStats] = useState(null);
   const [loadState, setLoadState] = useState("loading");
@@ -251,18 +234,12 @@ export default function AdminDashboardScreen() {
 
   return (
     <ScreenContainer>
-      <DashboardHeader
-        styles={styles}
-        colors={colors}
-        isSignedIn={Boolean(currentUser)}
-      />
-
-      {__DEV__ ? (
-        <View style={styles.demoNotice} accessibilityRole="text">
-          <Ionicons name="flask-outline" size={16} color={colors.accent} />
-          <Text style={styles.demoNoticeText}>Demo Data</Text>
-        </View>
-      ) : null}
+      <View style={{ marginBottom: spacing.md }}>
+        <AdminHeader
+          title="Admin Dashboard"
+          subtitle="Overview of SpeakSharp"
+        />
+      </View>
 
       {loadState === "loading" ? (
         <LoadingStatistics
@@ -292,7 +269,7 @@ export default function AdminDashboardScreen() {
             </TouchableOpacity>
           </View>
           <RecentActivity
-            events={Array.isArray(stats.recentActivity) ? stats.recentActivity : []}
+            events={stats.recentActivity}
             styles={styles}
             colors={colors}
           />
@@ -367,9 +344,6 @@ function getStyles(colors, typography) {
       marginBottom: spacing.md,
       gap: spacing.sm,
     },
-    headerText: {
-      flex: 1,
-    },
     title: {
       ...typography.heading,
       fontSize: 22,
@@ -377,50 +351,6 @@ function getStyles(colors, typography) {
     subtitle: {
       ...typography.body,
       marginTop: spacing.xs,
-    },
-    headerActions: {
-      alignItems: "flex-end",
-      gap: spacing.xs,
-    },
-    adminBadge: {
-      backgroundColor: colors.inputBackground,
-      borderRadius: radius.pill,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: spacing.xs,
-    },
-    adminBadgeText: {
-      color: colors.navySoft,
-      fontSize: 12,
-      fontWeight: "700",
-    },
-    settingsButton: {
-      minHeight: 40,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: spacing.xs,
-      paddingHorizontal: spacing.xs,
-    },
-    settingsButtonText: {
-      color: colors.navy,
-      fontSize: 12,
-      fontWeight: "600",
-    },
-    demoNotice: {
-      flexDirection: "row",
-      alignItems: "center",
-      alignSelf: "flex-start",
-      gap: spacing.xs,
-      backgroundColor: colors.inputBackground,
-      borderRadius: radius.pill,
-      paddingHorizontal: spacing.smd,
-      paddingVertical: spacing.xs,
-      marginBottom: spacing.md,
-    },
-    demoNoticeText: {
-      color: colors.accent,
-      fontSize: 12,
-      fontWeight: "700",
     },
     statisticsGrid: {
       flexDirection: "row",

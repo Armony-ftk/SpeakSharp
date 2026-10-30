@@ -1,20 +1,36 @@
 import { useCallback, useEffect, useState } from "react";
-import { MOCK_ADMIN_ACCESS } from "../constants/mockAdminAccess";
-
-const ACCESS_CHECK_DELAY_MS = 250;
+import { useAuth } from "./useAuth";
 
 export function useAdminAccess() {
   const [status, setStatus] = useState("checking");
   const [attempt, setAttempt] = useState(0);
+  const { refreshRole } = useAuth();
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      // DEV-ONLY: remove before handoff
-      setStatus(__DEV__ ? MOCK_ADMIN_ACCESS : "denied");
-    }, ACCESS_CHECK_DELAY_MS);
+    let active = true;
 
-    return () => clearTimeout(timeout);
-  }, [attempt]);
+    setStatus("checking");
+
+    refreshRole()
+      .then((resolvedRole) => {
+        if (!active) {
+          return;
+        }
+
+        setStatus(
+          resolvedRole === "admin" ? "allowed" : "denied",
+        );
+      })
+      .catch(() => {
+        if (active) {
+          setStatus("error");
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [attempt, refreshRole]);
 
   const retry = useCallback(() => {
     setStatus("checking");
