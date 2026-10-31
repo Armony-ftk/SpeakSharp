@@ -1,16 +1,30 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import ScreenContainer from "../ui/ScreenContainer";
 import AuthTextField from "../ui/AuthTextField";
 import SelectField from "../ui/SelectField";
 import PrimaryButton from "../ui/PrimaryButton";
-import { createSession } from "../../constants/mockSessions";
 import { spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
+import {
+  createSession,
+  getSessionById,
+  getSessionErrorMessage,
+  updateSession,
+} from "../../services/sessionService";
 
-const DURATION_OPTIONS = ["5 minutes", "8 minutes", "10 minutes", "15 minutes"];
+const NO_DURATION = "No target";
+const NO_DATE = "No date";
+const DURATION_OPTIONS = [
+  NO_DURATION,
+  "5 minutes",
+  "8 minutes",
+  "10 minutes",
+  "15 minutes",
+];
+const STATUS_OPTIONS = ["Active", "Completed"];
 
 function getUpcomingDates(count) {
   const formatter = new Intl.DateTimeFormat("en-US", {
@@ -20,33 +34,178 @@ function getUpcomingDates(count) {
   });
   return Array.from({ length: count }, (_, index) => {
     const date = new Date();
+    date.setHours(12, 0, 0, 0);
     date.setDate(date.getDate() + index);
-    return formatter.format(date);
+    return { label: formatter.format(date), date };
   });
 }
 
-const DATE_OPTIONS = getUpcomingDates(14);
+const UPCOMING_DATES = getUpcomingDates(14);
+const UPCOMING_DATE_OPTIONS = UPCOMING_DATES.map(({ label }) => label);
+
+function firstParam(value) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function durationToLabel(seconds) {
+  if (!seconds) return NO_DURATION;
+  if (seconds % 60 === 0) {
+    const minutes = seconds / 60;
+    return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+  }
+  return `${seconds} seconds`;
+}
+
+function durationToSeconds(label) {
+  if (label === NO_DURATION) return null;
+  const amount = Number.parseInt(label, 10);
+  return label.includes("second") ? amount : amount * 60;
+}
+
+function toFormDate(value) {
+  if (!value) return null;
+  const date = typeof value.toDate === "function" ? value.toDate() : value;
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+  return new Date(date.getTime());
+}
+
+function dateToLabel(value) {
+  const date = toFormDate(value);
+  if (!date) return NO_DATE;
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
 
 export default function CreateSessionScreen() {
+  const params = useLocalSearchParams();
+  const sessionId = firstParam(params.sessionId);
+  const isEditing = Boolean(sessionId);
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [duration, setDuration] = useState(DURATION_OPTIONS[1]);
-  const [date, setDate] = useState(DATE_OPTIONS[0]);
+  const [context, setContext] = useState("");
+  const [duration, setDuration] = useState("8 minutes");
+  const [presentationDateLabel, setPresentationDateLabel] = useState(
+    UPCOMING_DATES[0].label,
+  );
+  const [presentationDate, setPresentationDate] = useState(
+    () => new Date(UPCOMING_DATES[0].date.getTime()),
+  );
+  const [status, setStatus] = useState("Active");
+  const [extraDurationOption, setExtraDurationOption] = useState(null);
+  const [extraDateOption, setExtraDateOption] = useState(null);
+  const [loadingSession, setLoadingSession] = useState(isEditing);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const submissionInProgress = useRef(false);
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
 
-  const canSubmit = title.trim().length > 0;
+  const durationOptions = useMemo(
+    () =>
+      extraDurationOption && !DURATION_OPTIONS.includes(extraDurationOption)
+        ? [extraDurationOption, ...DURATION_OPTIONS]
+        : DURATION_OPTIONS,
+    [extraDurationOption],
+  );
+  const dateOptions = useMemo(
+    () => {
+      const options = [NO_DATE, ...UPCOMING_DATE_OPTIONS];
+      return extraDateOption && !options.includes(extraDateOption.label)
+        ? [extraDateOption.label, ...options]
+        : options;
+    },
+    [extraDateOption],
+  );
 
-  const handleCreate = () => {
-    if (!canSubmit) return;
-    const targetMinutes = parseInt(duration, 10);
-    const id = createSession({
-      title: title.trim(),
-      description: description.trim(),
-      targetMinutes,
-      date,
-    });
-    router.replace(`/session/${id}`);
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+
+    async function loadSession() {
+      setLoadingSession(true);
+      setErrorMessage("");
+      try {
+        const session = await getSessionById(sessionId);
+        if (!session) {
+          throw new Error("This session no longer exists.");
+        }
+        if (cancelled) return;
+
+        const durationLabel = durationToLabel(session.targetDurationSeconds);
+        const formDate = toFormDate(session.presentationDate);
+        const dateLabel = dateToLabel(formDate);
+        setTitle(session.title);
+        setContext(session.context ?? "");
+        setDuration(durationLabel);
+        setPresentationDateLabel(dateLabel);
+        setPresentationDate(formDate);
+        setStatus(session.status === "completed" ? "Completed" : "Active");
+        setExtraDurationOption(durationLabel);
+        setExtraDateOption(
+          formDate ? { label: dateLabel, date: formDate } : null,
+        );
+      } catch (error) {
+        if (!cancelled) setErrorMessage(getSessionErrorMessage(error));
+      } finally {
+        if (!cancelled) setLoadingSession(false);
+      }
+    }
+
+    loadSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  const canSubmit = title.trim().length > 0 && !loadingSession;
+
+  const handlePresentationDateChange = (label) => {
+    if (label === NO_DATE) {
+      setPresentationDateLabel(label);
+      setPresentationDate(null);
+      return;
+    }
+
+    const selectedDate =
+      UPCOMING_DATES.find((option) => option.label === label) ??
+      (extraDateOption?.label === label ? extraDateOption : null);
+    if (!selectedDate) return;
+
+    setPresentationDateLabel(label);
+    setPresentationDate(new Date(selectedDate.date.getTime()));
+  };
+
+  const handleSave = async () => {
+    if (!canSubmit || submissionInProgress.current) return;
+
+    submissionInProgress.current = true;
+    setErrorMessage("");
+    setSubmitting(true);
+    const sessionData = {
+      title,
+      context,
+      targetDurationSeconds: durationToSeconds(duration),
+      presentationDate,
+    };
+
+    try {
+      let savedSessionId = sessionId;
+      if (isEditing) {
+        await updateSession(sessionId, {
+          ...sessionData,
+          status: status.toLowerCase(),
+        });
+      } else {
+        savedSessionId = await createSession(sessionData);
+      }
+      router.replace(`/session/${savedSessionId}`);
+    } catch (error) {
+      setErrorMessage(getSessionErrorMessage(error));
+      submissionInProgress.current = false;
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -55,7 +214,9 @@ export default function CreateSessionScreen() {
         <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
           <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>New Practice Session</Text>
+        <Text style={styles.headerTitle}>
+          {isEditing ? "Edit Practice Session" : "New Practice Session"}
+        </Text>
       </View>
 
       <Text style={styles.subtitle}>What are you practising for?</Text>
@@ -67,38 +228,56 @@ export default function CreateSessionScreen() {
         value={title}
         onChangeText={setTitle}
         autoCapitalize="sentences"
+        editable={!loadingSession && !submitting}
       />
 
       <AuthTextField
         label="About this presentation"
         placeholder="University project about..."
-        value={description}
-        onChangeText={setDescription}
+        value={context}
+        onChangeText={setContext}
         autoCapitalize="sentences"
         multiline
         numberOfLines={3}
+        editable={!loadingSession && !submitting}
       />
 
       <SelectField
         label="Target duration"
         icon="time-outline"
         value={duration}
-        options={DURATION_OPTIONS}
+        options={durationOptions}
         onChange={setDuration}
       />
 
       <SelectField
         label="Presentation date"
         icon="calendar-outline"
-        value={date}
-        options={DATE_OPTIONS}
-        onChange={setDate}
+        value={presentationDateLabel}
+        options={dateOptions}
+        onChange={handlePresentationDateChange}
       />
 
+      {isEditing ? (
+        <SelectField
+          label="Status"
+          icon="checkmark-circle-outline"
+          value={status}
+          options={STATUS_OPTIONS}
+          onChange={setStatus}
+        />
+      ) : null}
+
+      {errorMessage ? (
+        <Text style={styles.errorText}>{errorMessage}</Text>
+      ) : null}
+
       <PrimaryButton
-        label="CREATE SESSION"
-        onPress={handleCreate}
-        style={!canSubmit && styles.disabledButton}
+        label={isEditing ? "SAVE CHANGES" : "CREATE SESSION"}
+        loadingLabel={isEditing ? "SAVING..." : "CREATING..."}
+        loading={submitting}
+        disabled={!canSubmit}
+        onPress={handleSave}
       />
     </ScreenContainer>
   );
@@ -121,8 +300,11 @@ function getStyles(colors, typography) {
       fontSize: 15,
       marginBottom: spacing.lg,
     },
-    disabledButton: {
-      opacity: 0.5,
+    errorText: {
+      color: "#D92D20",
+      fontSize: 13,
+      lineHeight: 18,
+      marginBottom: spacing.sm,
     },
   });
 }

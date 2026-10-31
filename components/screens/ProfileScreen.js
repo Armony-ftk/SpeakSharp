@@ -1,36 +1,28 @@
-import { useCallback, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import ScreenContainer from "../ui/ScreenContainer";
 import AppHeader from "../ui/AppHeader";
 import ProfileStatCard from "../ui/ProfileStatCard";
-import ProgressBar from "../ui/ProgressBar";
-import { getProfile, getInitials } from "../../constants/mockProfile";
+import EmptyState from "../ui/EmptyState";
+import PrimaryButton from "../ui/PrimaryButton";
+import { useAccountData } from "../../context/AccountDataContext";
+import { getFullName, getInitials, formatMemberSince } from "../../utils/profile";
+import { formatProgressRating } from "../../utils/progressStats";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
 
-const stats = {
-  totalSessions: 5,
-  averageScore: 7.5,
-};
-const goal = {
-  title: "Improve Conclusion Score",
-  target: "Target: 8.0 by next month",
-  progress: 0.7,
-};
-
 export default function ProfileScreen() {
-  const [profile, setProfile] = useState(() => getProfile());
+  const { profile, sessions, progress, loading, errorMessage, retry,
+    profileLoading, profileErrorMessage, retryProfile } = useAccountData();
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
 
-  // Refresh from the mock store whenever this screen regains focus (e.g. after editing).
-  useFocusEffect(
-    useCallback(() => {
-      setProfile({ ...getProfile() });
-    }, []),
-  );
+  const fullName = getFullName(profile?.fullName);
+  const active = sessions.some((session) => session.status === "active");
+  const delta = progress.comparison.rating?.delta;
+  const badgeLabel = !Number.isFinite(delta) ? "—"
+    : `${delta > 0 ? "+" : ""}${delta.toFixed(1)}`;
 
   return (
     <ScreenContainer>
@@ -39,13 +31,18 @@ export default function ProfileScreen() {
         onRightPress={() => router.push("/settings")}
       />
 
+      {profileLoading ? <ActivityIndicator color={colors.accent} /> : null}
+      {profileErrorMessage ? (
+        <EmptyState title="Profile unavailable" description={profileErrorMessage}
+          actionLabel="TRY AGAIN" onAction={retryProfile} />
+      ) : null}
       <View style={styles.avatarSection}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{getInitials(profile.name)}</Text>
+          <Text style={styles.avatarText}>{getInitials(fullName) || "?"}</Text>
         </View>
-        <Text style={styles.name}>{profile.name}</Text>
+        <Text style={styles.name}>{profileLoading ? "Loading profile..." : fullName || "Name unavailable"}</Text>
         <Text style={styles.memberSince}>
-          Member since {profile.memberSince}
+          Member since {formatMemberSince(profile?.createdAt)}
         </Text>
         <TouchableOpacity
           style={styles.editButton}
@@ -58,38 +55,29 @@ export default function ProfileScreen() {
       </View>
 
       <Text style={styles.sectionTitle}>Your Stats</Text>
-      <ProfileStatCard
-        icon="mic-outline"
-        badgeLabel="Active"
-        label="Total Sessions"
-        value={stats.totalSessions}
-      />
-      <ProfileStatCard
-        icon="star-outline"
-        badgeLabel="+0.5"
-        label="Average Score"
-        value={stats.averageScore}
-      />
-
-      <Text style={styles.sectionTitle}>Current Goal</Text>
-      <View style={styles.goalCard}>
-        <View style={styles.goalHeaderRow}>
-          <View style={styles.goalIconWrap}>
-            <Ionicons name="flag-outline" size={16} color={colors.accent} />
-          </View>
-          <View style={styles.goalTextWrap}>
-            <Text style={styles.goalTitle}>{goal.title}</Text>
-            <Text style={styles.goalTarget}>{goal.target}</Text>
-          </View>
-        </View>
-        <View style={styles.goalProgressRow}>
-          <Text style={styles.goalProgressLabel}>Progress</Text>
-          <Text style={styles.goalProgressValue}>
-            {Math.round(goal.progress * 100)}%
-          </Text>
-        </View>
-        <ProgressBar progress={goal.progress} />
-      </View>
+      {loading ? <ActivityIndicator color={colors.accent} /> : errorMessage ? (
+        <>
+          <Text style={styles.memberSince}>{errorMessage}</Text>
+          <PrimaryButton label="TRY AGAIN" onPress={retry} />
+        </>
+      ) : (
+        <>
+          <ProfileStatCard
+            icon="mic-outline"
+            badgeLabel={active ? "Active" : "Inactive"}
+            badgeTone={active ? "positive" : "neutral"}
+            label="Total Sessions"
+            value={progress.overview.sessions}
+          />
+          <ProfileStatCard
+            icon="star-outline"
+            badgeLabel={badgeLabel}
+            badgeTone={delta > 0 ? "positive" : "neutral"}
+            label="Average Score"
+            value={formatProgressRating(progress.overview.average)}
+          />
+        </>
+      )}
     </ScreenContainer>
   );
 }
@@ -156,58 +144,6 @@ function getStyles(colors, typography) {
       color: colors.navy,
       marginBottom: spacing.md,
       marginTop: spacing.sm,
-    },
-    goalCard: {
-      backgroundColor: colors.card,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: colors.cardBorder,
-      padding: spacing.md,
-      shadowColor: "#101828",
-      shadowOpacity: 0.05,
-      shadowOffset: { width: 0, height: 4 },
-      shadowRadius: 12,
-      elevation: 2,
-    },
-    goalHeaderRow: {
-      flexDirection: "row",
-      marginBottom: spacing.md,
-    },
-    goalIconWrap: {
-      width: 32,
-      height: 32,
-      borderRadius: radius.pill,
-      backgroundColor: colors.inputBackground,
-      alignItems: "center",
-      justifyContent: "center",
-      marginRight: spacing.sm,
-    },
-    goalTextWrap: {
-      flex: 1,
-    },
-    goalTitle: {
-      fontSize: 14,
-      fontWeight: "700",
-      color: colors.navy,
-    },
-    goalTarget: {
-      fontSize: 12,
-      color: colors.textSecondary,
-      marginTop: 2,
-    },
-    goalProgressRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      marginBottom: spacing.xs,
-    },
-    goalProgressLabel: {
-      fontSize: 12,
-      color: colors.textSecondary,
-    },
-    goalProgressValue: {
-      fontSize: 12,
-      fontWeight: "700",
-      color: colors.navy,
     },
   });
 }

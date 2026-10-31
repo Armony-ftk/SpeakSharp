@@ -12,6 +12,8 @@ export default function PrimaryButton({
   label,
   onPress,
   loading,
+  loadingLabel,
+  disabled,
   style,
   icon,
   pill,
@@ -21,13 +23,25 @@ export default function PrimaryButton({
 
   return (
     <TouchableOpacity
-      style={[styles.button, pill && styles.buttonPill, style]}
+      style={[
+        styles.button,
+        pill && styles.buttonPill,
+        disabled && styles.buttonDisabled,
+        style,
+      ]}
       onPress={onPress}
       activeOpacity={0.85}
-      disabled={loading}
+      disabled={loading || disabled}
     >
       {loading ? (
-        <ActivityIndicator color="#FFFFFF" />
+        <>
+          <ActivityIndicator color="#FFFFFF" size="small" />
+          {loadingLabel ? (
+            <Text style={[styles.label, styles.loadingLabel]}>
+              {loadingLabel}
+            </Text>
+          ) : null}
+        </>
       ) : (
         <>
           {icon ? (
@@ -60,9 +74,13 @@ function getStyles(colors) {
       shadowOffset: { width: 0, height: 4 },
       shadowRadius: 10,
       elevation: 3,
+      marginBottom: spacing.sm,
     },
     buttonPill: {
       borderRadius: radius.pill,
+    },
+    buttonDisabled: {
+      opacity: 0.6,
     },
     icon: {
       marginRight: spacing.sm,
@@ -72,6 +90,9 @@ function getStyles(colors) {
       fontSize: 14,
       fontWeight: "700",
       letterSpacing: 0.6,
+    },
+    loadingLabel: {
+      marginLeft: spacing.sm,
     },
   });
 }

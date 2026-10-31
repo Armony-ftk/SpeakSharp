@@ -1,961 +1,293 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  Animated,
-  Easing,
-  Modal,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import ScreenContainer from "../ui/ScreenContainer";
 import PrimaryButton from "../ui/PrimaryButton";
-import StatCard from "../ui/StatCard";
-import Waveform from "../ui/Waveform";
-import Chip from "../ui/Chip";
-import ConfirmDialog from "../ui/ConfirmDialog";
-import { getSession } from "../../constants/mockSessions";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
+import { RECORDING_STATUS } from "../../constants/recordindStatuses";
+import {
+  getRecording, markRecordingUploaded, subscribeToRecording, getTranscriptionErrorMessage,
+} from "../../services/recordingService";
+import { getUploadErrorMessage, uploadRecordingAudio } from "../../services/audioUploadService";
+import { getMetricsProgress, hasSavedTranscript } from "../../utils/metricsProgress";
+import { getAnalysisProgress, getAnalysisErrorMessage, getAnalysisRetryErrorMessage } from "../../utils/analysisProgress";
+import { requestAnalysisRetry } from "../../services/processingService";
+import { getSessionById } from "../../services/sessionService";
+import { hasRecordingFeedback } from "../../utils/recordingFeedback";
+import RecordingFeedbackView from "./RecordingFeedbackView";
 
 const PROCESSING_STEPS = [
-  "Recording uploaded",
-  "Transcript generated",
-  "Speaking metrics calculated",
-  "Generating AI feedback",
+  "Recording uploaded", "Transcript generated",
+  "Speaking metrics calculated", "AI feedback generated",
 ];
 
-const MOCK_TRANSCRIPT =
-  "Good afternoon everyone.\n\nToday we are presenting our React Native application.\n\nThe application uses Firebase for authentication...";
-
-// Mock data standing in for a real analysis API.
-const FEEDBACK = {
-  score: 8.2,
-  previousScore: 6.8,
-  previousAttempt: 4,
-  metrics: [
-    { label: "Duration", value: "7:43", subtitle: "Target 8:00" },
-    { label: "Words", value: "923", subtitle: "Total Count" },
-    { label: "Pace", value: "119 wpm", subtitle: "Steady" },
-    { label: "Fillers", value: "8", subtitle: "Needs attention" },
-  ],
-  whatWentWell: [
-    "Clear problem statement",
-    "Logical flow",
-    "Strong explanation",
-  ],
-  improveNext: [
-    "Strengthen your conclusion",
-    "Reduce repetition",
-    "Slow down during introduction",
-  ],
-  fillerWords: [
-    { word: "um", count: 4 },
-    { word: "like", count: 2 },
-    { word: "basically", count: 2 },
-  ],
-  nextStep: "Focus on your conclusion in your next attempt.",
-  scoreBreakdown: [
-    { label: "Structure", value: "8.0 / 10" },
-    { label: "Clarity", value: "8.4 / 10" },
-    { label: "Relevance", value: "8.5 / 10" },
-    { label: "Conciseness", value: "7.9 / 10" },
-  ],
-};
-
-function formatDuration(totalSeconds) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+function firstParam(value) {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 export default function AttemptFlowScreen() {
-  const { id, view } = useLocalSearchParams();
-  const session = getSession(id);
-  const attemptNumber = session.attempts + 1;
+  const params = useLocalSearchParams();
+  const sessionId = firstParam(params.id);
+  const recordingId = firstParam(params.recordingId);
+  // A new recording gets new state; an earlier upload cannot update the next attempt's UI.
+  return <RecordingProcessing key={`${sessionId}/${recordingId}`} sessionId={sessionId} recordingId={recordingId} />;
+}
 
-  const [phase, setPhase] = useState(
-    view === "feedback" ? "feedback" : "recording",
-  );
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [processingStep, setProcessingStep] = useState(0);
-  const [transcript, setTranscript] = useState(MOCK_TRANSCRIPT);
-  const [savedChanges, setSavedChanges] = useState(true);
-  const [showScoreInfo, setShowScoreInfo] = useState(false);
-  const [reflection, setReflection] = useState("");
-  const [noteSaved, setNoteSaved] = useState(false);
-  const [showDeleteRecording, setShowDeleteRecording] = useState(false);
+function RecordingProcessing({ sessionId, recordingId }) {
+  const [recording, setRecording] = useState(null);
+  const [session, setSession] = useState(null);
+  const [uploadState, setUploadState] = useState("pending");
+  const [uploadError, setUploadError] = useState("");
+  const [listenerError, setListenerError] = useState("");
+  const [listenerVersion, setListenerVersion] = useState(0);
+  const [retryingAnalysis, setRetryingAnalysis] = useState(false);
+  const [analysisRetryError, setAnalysisRetryError] = useState("");
+  const mountedRef = useRef(true);
+  const uploadInProgressRef = useRef(false);
+  const analysisRetryRef = useRef(false);
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
-  const orbPulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (phase !== "recording") {
-      orbPulse.setValue(1);
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    let active = true;
+    getSessionById(sessionId).then((value) => {
+      if (active) setSession(value);
+    }).catch(() => {
+      // Title and target are optional; recording feedback remains available.
+      if (active) setSession(null);
+    });
+    return () => { active = false; };
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || !recordingId) {
+      setListenerError("Select a saved recording from your session to view its progress.");
       return;
     }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(orbPulse, {
-          toValue: 1.07,
-          duration: 900,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(orbPulse, {
-          toValue: 1,
-          duration: 900,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [phase, orbPulse]);
-
-  useEffect(() => {
-    if (phase !== "recording") return;
-    const interval = setInterval(
-      () => setElapsedSeconds((prev) => prev + 1),
-      1000,
-    );
-    return () => clearInterval(interval);
-  }, [phase]);
-
-  useEffect(() => {
-    if (phase !== "processing") return;
-    if (processingStep >= PROCESSING_STEPS.length) {
-      const timeout = setTimeout(() => setPhase("transcript"), 500);
-      return () => clearTimeout(timeout);
+    setListenerError("");
+    try {
+      return subscribeToRecording(sessionId, recordingId, (value) => {
+        setRecording(value);
+        setListenerError(value ? "" : "This recording is unavailable or has been deleted.");
+        if (value?.uploadedAt && !uploadInProgressRef.current) setUploadState("done");
+      }, () => setListenerError("Could not load processing updates. Check your connection and reconnect."));
+    } catch {
+      setListenerError("Could not load this recording. Please sign in and reopen the session.");
     }
-    const timeout = setTimeout(
-      () => setProcessingStep((prev) => prev + 1),
-      700,
-    );
-    return () => clearTimeout(timeout);
-  }, [phase, processingStep]);
+  }, [sessionId, recordingId, listenerVersion]);
 
-  const wordCount = transcript.trim().split(/\s+/).filter(Boolean).length;
+  const startUpload = useCallback(async (retryProcessing = false) => {
+    if (uploadInProgressRef.current || !sessionId || !recordingId) return;
+    uploadInProgressRef.current = true;
+    if (mountedRef.current) {
+      setUploadState("uploading");
+      setUploadError("");
+    }
+    try {
+      const current = await getRecording(sessionId, recordingId);
+      if (!current) throw new Error("The recording no longer exists.");
+      const eligible = [RECORDING_STATUS.PENDING_UPLOAD, RECORDING_STATUS.FAILED].includes(current.processingStatus);
+      if (!eligible || hasSavedTranscript(current) || (current.uploadedAt && !retryProcessing)) {
+        if (mountedRef.current) setUploadState("done");
+        return;
+      }
+      const audioPath = await uploadRecordingAudio(sessionId, recordingId);
+      await markRecordingUploaded(sessionId, recordingId, audioPath);
+      if (mountedRef.current) setUploadState("done");
+    } catch (error) {
+      if (mountedRef.current) {
+        setUploadState("error");
+        setUploadError(getUploadErrorMessage(error));
+      }
+    } finally {
+      uploadInProgressRef.current = false;
+    }
+  }, [sessionId, recordingId]);
 
-  const handleStop = () => setPhase("review");
-  const handleRecordAgain = () => {
-    setElapsedSeconds(0);
-    setPhase("recording");
-  };
-  const handleDiscard = () => router.back();
-  const handleUseRecording = () => {
-    setProcessingStep(0);
-    setPhase("processing");
-  };
-  const handleTranscriptChange = (text) => {
-    setTranscript(text);
-    setSavedChanges(false);
-  };
-  const handleAnalyse = () => setPhase("feedback");
-  const handleRecordAnother = () => {
-    setElapsedSeconds(0);
-    setProcessingStep(0);
-    setTranscript(MOCK_TRANSCRIPT);
-    setSavedChanges(true);
-    setShowScoreInfo(false);
-    setReflection("");
-    setNoteSaved(false);
-    setPhase("recording");
-  };
-  const handleBackToSession = () => router.back();
+  useEffect(() => { void startUpload(); }, [startUpload]);
 
-  if (phase === "recording" || phase === "paused") {
-    const isPaused = phase === "paused";
+  const retryAnalysis = async () => {
+    if (analysisRetryRef.current) return;
+    analysisRetryRef.current = true;
+    setRetryingAnalysis(true);
+    setAnalysisRetryError("");
+    try {
+      await requestAnalysisRetry(sessionId, recordingId);
+    } catch (error) {
+      if (mountedRef.current) setAnalysisRetryError(getAnalysisRetryErrorMessage(error?.code));
+    } finally {
+      analysisRetryRef.current = false;
+      if (mountedRef.current) setRetryingAnalysis(false);
+    }
+  };
+
+  const status = recording?.processingStatus;
+  const metricsProgress = getMetricsProgress(recording);
+  const analysisProgress = getAnalysisProgress(recording);
+  const transcriptReady = hasSavedTranscript(recording)
+    && ([RECORDING_STATUS.TRANSCRIPT_READY, RECORDING_STATUS.ANALYSING, RECORDING_STATUS.COMPLETED].includes(status)
+      || metricsProgress.failed || analysisProgress.failed);
+  const failed = status === RECORDING_STATUS.FAILED;
+  // A listener snapshot can confirm upload before the local upload promise settles.
+  const uploadDone = uploadState === "done" || (uploadState !== "error"
+    && ((Boolean(recording?.uploadedAt) && uploadState !== "uploading")
+      || [RECORDING_STATUS.TRANSCRIBING, RECORDING_STATUS.TRANSCRIPT_READY,
+        RECORDING_STATUS.ANALYSING, RECORDING_STATUS.COMPLETED].includes(status)));
+  const waiting = status === RECORDING_STATUS.PENDING_UPLOAD && uploadState === "done";
+  const canRetryProcessing = (failed || waiting) && !hasSavedTranscript(recording) && !metricsProgress.failed;
+  // Match the existing callable's six-minute stall condition for presentation only.
+  // Re-evaluate on render/re-entry; do not add a timer or change retry operations.
+  const analysisWaiting = metricsProgress.ready && status === RECORDING_STATUS.TRANSCRIPT_READY;
+  const analysisSince = (analysisProgress.active ? recording?.analysisJob?.startedAt
+    : analysisWaiting ? recording?.updatedAt : null)?.toMillis?.();
+  const analysisStalled = Number.isFinite(analysisSince) && Date.now() - analysisSince > 6 * 60 * 1000;
+  const showAnalysisRetry = analysisProgress.failed || analysisStalled || retryingAnalysis || Boolean(analysisRetryError);
+  const goBack = () => router.replace({ pathname: "/session/[id]", params: { id: sessionId } });
+
+  if (!recording && !listenerError) {
     return (
       <ScreenContainer contentStyle={styles.centeredContent}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          hitSlop={8}
-          style={styles.backButton}
-        >
-          <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
-        </TouchableOpacity>
-
-        <Animated.View
-          style={[styles.orbGlow, { transform: [{ scale: orbPulse }] }]}
-        >
-          <View style={styles.orb}>
-            <View style={styles.orbWave}>
-              <Waveform
-                progress={isPaused ? 0.4 : 1}
-                color="#8EC5FF"
-                trackColor="rgba(142,197,255,0.35)"
-                animated={!isPaused}
-              />
-            </View>
-          </View>
-        </Animated.View>
-
-        <Text style={styles.recordingMeta}>
-          {session.title} · Attempt {attemptNumber}
-        </Text>
-        <Text style={styles.recordingHint}>
-          {isPaused
-            ? "Recording paused. Resume when you're ready."
-            : "Recording in progress. Speak clearly and take your time."}{" "}
-          Recording continues to work without internet.
-        </Text>
-
-        <View style={styles.recordingSpacer} />
-
-        <View style={styles.fullWaveform}>
-          <Waveform
-            progress={isPaused ? 0.4 : 1}
-            color={colors.accent}
-            animated={!isPaused}
-          />
-        </View>
-
-        <View style={styles.controlsRow}>
-          <View style={styles.controlItem}>
-            <TouchableOpacity
-              style={styles.controlButton}
-              onPress={() => setPhase(isPaused ? "recording" : "paused")}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={isPaused ? "play" : "pause"}
-                size={20}
-                color={colors.textPrimary}
-              />
-            </TouchableOpacity>
-            <Text style={styles.controlLabel}>
-              {isPaused ? "Resume" : "Pause"}
-            </Text>
-          </View>
-
-          <View style={styles.controlItem}>
-            <View style={styles.micButton}>
-              <Ionicons name="mic" size={24} color="#FFFFFF" />
-            </View>
-            <Text style={styles.controlLabel}>
-              {formatDuration(elapsedSeconds)}
-            </Text>
-          </View>
-
-          <View style={styles.controlItem}>
-            <TouchableOpacity
-              style={styles.controlButton}
-              onPress={handleStop}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="close" size={20} color="#E5484D" />
-            </TouchableOpacity>
-            <Text style={styles.controlLabel}>Stop</Text>
-          </View>
-        </View>
+        <ActivityIndicator color={colors.accent} />
+        <Text style={styles.processingHint}>Loading recording...</Text>
+        <PrimaryButton label="Back to Session" onPress={goBack} style={styles.retryButton} />
       </ScreenContainer>
     );
   }
 
-  if (phase === "review") {
+  if (status === RECORDING_STATUS.COMPLETED && !listenerError) {
+    if (hasRecordingFeedback(recording)) {
+      return <RecordingFeedbackView recording={recording} session={session} onBackToSession={goBack} />;
+    }
     return (
       <ScreenContainer>
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
-            <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Review Recording</Text>
-        </View>
-        <Text style={styles.attemptSubtitle}>Attempt {attemptNumber}</Text>
-
-        <View style={styles.reviewCard}>
-          <Waveform progress={0.35} color={colors.accent} />
-          <Text style={styles.reviewPosition}>
-            0:00 / {formatDuration(elapsedSeconds)}
-          </Text>
-        </View>
-
-        <PrimaryButton
-          label="RECORD AGAIN"
-          icon="mic"
-          pill
-          onPress={handleRecordAgain}
-        />
-        <TouchableOpacity
-          onPress={() => setShowDeleteRecording(true)}
-          style={styles.textButton}
-        >
-          <Text style={styles.textButtonLabel}>Delete recording</Text>
-        </TouchableOpacity>
-        <PrimaryButton
-          label="USE THIS RECORDING"
-          onPress={handleUseRecording}
-          style={styles.useRecordingButton}
-        />
-
-        <ConfirmDialog
-          visible={showDeleteRecording}
-          title="Delete this recording?"
-          message="This attempt will be permanently removed."
-          confirmLabel="Delete"
-          destructive
-          onCancel={() => setShowDeleteRecording(false)}
-          onConfirm={handleDiscard}
-        />
-      </ScreenContainer>
-    );
-  }
-
-  if (phase === "processing") {
-    return (
-      <ScreenContainer contentStyle={styles.centeredContent}>
-        <Text style={styles.processingTitle}>Analysing your presentation</Text>
-        {PROCESSING_STEPS.map((step, index) => {
-          const done = index < processingStep;
-          const active = index === processingStep;
-          return (
-            <View key={step} style={styles.processingRow}>
-              <Ionicons
-                name={
-                  done
-                    ? "checkmark-circle"
-                    : active
-                      ? "ellipse"
-                      : "ellipse-outline"
-                }
-                size={18}
-                color={
-                  done ? colors.success : active ? colors.accent : colors.border
-                }
-              />
-              <Text
-                style={[
-                  styles.processingLabel,
-                  !done && !active && styles.processingLabelPending,
-                ]}
-              >
-                {step}
-              </Text>
-            </View>
-          );
-        })}
-        <Text style={styles.processingHint}>This may take a moment...</Text>
-      </ScreenContainer>
-    );
-  }
-
-  if (phase === "transcript") {
-    return (
-      <ScreenContainer>
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
-            <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Review Transcript</Text>
-        </View>
-        <Text style={styles.attemptSubtitle}>Attempt {attemptNumber}</Text>
-
-        <Text style={styles.transcriptHeading}>Check your transcript</Text>
-        <Text style={styles.transcriptSubtitle}>
-          Correct names, terminology and obvious transcription mistakes.
+        <Text style={styles.processingTitle}>Feedback unavailable</Text>
+        <Text style={styles.processingHint}>
+          This recording is complete, but its feedback is missing or incomplete. Reconnect to check for saved updates.
         </Text>
-
-        <TextInput
-          style={styles.transcriptInput}
-          value={transcript}
-          onChangeText={handleTranscriptChange}
-          multiline
-          textAlignVertical="top"
-        />
-        <Text style={styles.wordCount}>{wordCount} words</Text>
-
-        <TouchableOpacity
-          onPress={() => setSavedChanges(true)}
-          style={styles.textButton}
-        >
-          <Text style={styles.textButtonLabel}>
-            {savedChanges ? "Changes saved" : "Save Changes"}
-          </Text>
-        </TouchableOpacity>
-
-        <PrimaryButton label="ANALYSE PRESENTATION" onPress={handleAnalyse} />
+        <PrimaryButton label="RECONNECT" onPress={() => setListenerVersion((value) => value + 1)} />
+        <PrimaryButton label="Back to Session" onPress={goBack} />
       </ScreenContainer>
     );
   }
 
-  // phase === 'feedback'
   return (
-    <ScreenContainer>
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={handleBackToSession} hitSlop={8}>
-          <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Attempt {attemptNumber} Analysis</Text>
-        <Ionicons name="wifi" size={16} color={colors.textSecondary} />
-      </View>
-
-      <Text style={styles.scoreLabel}>OVERALL SCORE</Text>
-      <Text style={styles.scoreValue}>{FEEDBACK.score.toFixed(1)}</Text>
-      <Text style={styles.scoreMax}>/ 10</Text>
-      <Text style={styles.scoreDelta}>
-        ↑ +{(FEEDBACK.score - FEEDBACK.previousScore).toFixed(1)} from Attempt{" "}
-        {FEEDBACK.previousAttempt}
-      </Text>
-      <TouchableOpacity onPress={() => setShowScoreInfo(true)}>
-        <Text style={styles.scoreInfoLink}>How is this score calculated?</Text>
+    <ScreenContainer contentStyle={styles.centeredContent}>
+      <TouchableOpacity onPress={goBack} hitSlop={8} style={styles.backButton}>
+        <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
       </TouchableOpacity>
-
-      <View style={styles.nextStepCard}>
-        <View style={styles.nextStepHeader}>
-          <Ionicons name="megaphone-outline" size={14} color={colors.navy} />
-          <Text style={styles.nextStepLabel}>YOUR NEXT STEP</Text>
-        </View>
-        <Text style={styles.nextStepText}>{FEEDBACK.nextStep}</Text>
-        <PrimaryButton
-          label="RECORD ANOTHER ATTEMPT"
-          icon="mic"
-          pill
-          onPress={handleRecordAnother}
-        />
-      </View>
-
-      <Text style={styles.heading}>Speaking Metrics</Text>
-      <View style={styles.metricsGrid}>
-        <View style={styles.metricsRow}>
-          <StatCard {...FEEDBACK.metrics[0]} />
-          <StatCard {...FEEDBACK.metrics[1]} />
-        </View>
-        <View style={styles.metricsRow}>
-          <StatCard {...FEEDBACK.metrics[2]} />
-          <StatCard {...FEEDBACK.metrics[3]} />
-        </View>
-      </View>
-
-      <View style={styles.listCard}>
-        <View style={styles.cardHeaderRow}>
-          <Ionicons
-            name="checkmark-circle-outline"
-            size={16}
-            color={colors.success}
-          />
-          <Text style={styles.cardHeading}>WHAT YOU DID WELL</Text>
-        </View>
-        {FEEDBACK.whatWentWell.map((item, index) => (
-          <View key={item} style={styles.numberedRow}>
-            <View style={styles.numberedBadge}>
-              <Text style={styles.numberedBadgeText}>{index + 1}</Text>
-            </View>
-            <Text style={styles.checklistText}>{item}</Text>
+      <Text style={styles.processingTitle}>
+        {analysisProgress.ready ? "Analysis complete" : failed ? "Processing failed"
+          : analysisProgress.active ? "Generating AI feedback" : metricsProgress.ready ? "Speaking metrics complete"
+            : transcriptReady ? "Transcription complete" : "Processing your recording"}
+      </Text>
+      {PROCESSING_STEPS.map((step, index) => {
+        const done = index === 0 ? uploadDone : index === 1 ? transcriptReady
+          : index === 2 ? metricsProgress.ready : analysisProgress.ready;
+        const active = !done && !listenerError && (index === 0
+          ? uploadState === "pending" || uploadState === "uploading"
+          : index === 1 ? status === RECORDING_STATUS.TRANSCRIBING
+            : index === 2 ? metricsProgress.active : analysisProgress.active);
+        const stepFailed = index === 0 ? uploadState === "error"
+          : index === 1 ? failed && !metricsProgress.failed && !analysisProgress.failed
+            : index === 2 ? metricsProgress.failed : analysisProgress.failed;
+        let label = step;
+        if (index === 0 && active) label = "Uploading recording";
+        if (index === 0 && stepFailed) label = "Recording upload failed";
+        if (index === 1 && active) label = "Generating transcription";
+        if (index === 1 && waiting) label = "Waiting for transcription";
+        if (index === 1 && stepFailed) label = "Transcription failed";
+        if (index === 2 && !done) label = "Waiting for speaking metrics";
+        if (index === 2 && active) label = "Calculating metrics";
+        if (index === 2 && stepFailed) label = "Speaking metrics failed";
+        if (index === 3 && !done) label = "Waiting for AI feedback";
+        if (index === 3 && active) label = "Generating AI feedback";
+        if (index === 3 && stepFailed) label = "AI analysis failed";
+        return (
+          <View key={step} style={styles.processingRow}>
+            {done ? <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+              : active ? <ActivityIndicator size="small" color={colors.accent} />
+                : stepFailed ? <Ionicons name="warning-outline" size={20} color="#D92D20" />
+                  : <Ionicons name="ellipse-outline" size={20} color={colors.border} />}
+            <Text style={[styles.processingLabel, !done && !active && styles.processingLabelPending,
+              stepFailed && styles.processingLabelError]}>{label}</Text>
           </View>
-        ))}
-      </View>
-
-      <View style={styles.listCard}>
-        <View style={styles.cardHeaderRow}>
-          <Ionicons name="bulb-outline" size={16} color={colors.accent} />
-          <Text style={styles.cardHeading}>IMPROVE NEXT</Text>
+        );
+      })}
+      {listenerError ? (
+        <>
+          <Text style={styles.uploadErrorText}>{listenerError}</Text>
+          {recordingId ? <PrimaryButton label="RECONNECT" onPress={() => setListenerVersion((value) => value + 1)} style={styles.retryButton} /> : null}
+        </>
+      ) : null}
+      {uploadState === "error" ? (
+        <>
+          <Text style={styles.uploadErrorText}>{uploadError}</Text>
+          <PrimaryButton label="RETRY UPLOAD" onPress={() => startUpload(canRetryProcessing)} style={styles.retryButton} />
+        </>
+      ) : failed ? (
+        <Text style={styles.uploadErrorText}>{metricsProgress.failed
+          ? "Speaking metrics could not be saved. Your transcript and audio are safe. Please contact the project administrator."
+          : analysisProgress.failed ? getAnalysisErrorMessage(recording.processingError?.code)
+            : getTranscriptionErrorMessage(recording.processingError?.code)}</Text>
+      ) : (
+        <Text style={styles.processingHint}>
+          {analysisProgress.ready ? "Your transcript, speaking metrics and AI feedback are saved."
+            : analysisProgress.active ? "Your AI feedback is being generated. You can leave this screen and return later. If this step stays active for more than six minutes, reopen this recording to retry AI analysis."
+              : metricsProgress.ready ? "Your transcript and speaking metrics are saved. Waiting for AI analysis to start. If this takes more than six minutes, reopen this recording to retry AI analysis."
+            : transcriptReady ? "Your transcript is saved. Speaking metrics are being calculated."
+            : waiting ? "Your upload is complete. Waiting for the transcription service. You can leave this screen and return later."
+              : "This may take a moment. Your saved recording will be kept."}
+        </Text>
+      )}
+      {failed && canRetryProcessing && uploadState === "done" && !listenerError ? (
+        <PrimaryButton label="RETRY TRANSCRIPTION"
+          onPress={() => startUpload(true)} style={styles.retryButton} />
+      ) : null}
+      {showAnalysisRetry && !listenerError ? (
+        <>
+          {analysisRetryError ? <Text style={styles.uploadErrorText}>{analysisRetryError}</Text> : null}
+          <PrimaryButton label="RETRY AI ANALYSIS" onPress={retryAnalysis}
+            loading={retryingAnalysis} loadingLabel="REQUESTING RETRY" style={styles.retryButton} />
+        </>
+      ) : null}
+      {transcriptReady ? (
+        <View style={styles.transcriptCard}>
+          <Text style={styles.transcriptHeading}>Transcript</Text>
+          <Text selectable style={styles.transcriptText}>{recording.transcript.originalText}</Text>
         </View>
-        {FEEDBACK.improveNext.map((item, index) => (
-          <View key={item} style={styles.numberedRow}>
-            <View style={styles.numberedBadge}>
-              <Text style={styles.numberedBadgeText}>{index + 1}</Text>
-            </View>
-            <Text style={styles.checklistText}>{item}</Text>
-          </View>
-        ))}
-      </View>
-
-      <Text style={styles.sectionLabel}>FILLER WORDS BREAKDOWN</Text>
-      <View style={styles.chipRow}>
-        {FEEDBACK.fillerWords.map((item) => (
-          <Chip key={item.word} label={`"${item.word}" ${item.count}`} />
-        ))}
-      </View>
-
-      <Text style={styles.heading}>Reflection Note</Text>
-      <View style={styles.listCard}>
-        <TextInput
-          style={styles.reflectionInput}
-          value={reflection}
-          onChangeText={(text) => {
-            setReflection(text);
-            setNoteSaved(false);
-          }}
-          placeholder="What will you focus on next?"
-          placeholderTextColor={colors.placeholder}
-        />
-        <TouchableOpacity
-          onPress={() => setNoteSaved(true)}
-          style={styles.saveNoteButton}
-        >
-          <Text style={styles.saveNoteButtonText}>
-            {noteSaved ? "Note saved" : "Save Note"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <TouchableOpacity
-        onPress={handleBackToSession}
-        style={styles.backToSessionLink}
-      >
+      ) : null}
+      <TouchableOpacity onPress={goBack} style={styles.backToSessionLink}>
         <Text style={styles.backToSessionText}>Back to Session</Text>
       </TouchableOpacity>
-
-      <Modal
-        visible={showScoreInfo}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowScoreInfo(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>How your score works</Text>
-            {FEEDBACK.scoreBreakdown.map((item) => (
-              <View key={item.label} style={styles.structureRow}>
-                <Text style={styles.structureLabel}>{item.label}</Text>
-                <Text style={styles.structureValue}>{item.value}</Text>
-              </View>
-            ))}
-            <Text style={styles.modalDescription}>
-              Your SpeakSharp rating is a coaching score designed to help you
-              track improvement between attempts. It is not a prediction of your
-              university mark.
-            </Text>
-            <PrimaryButton
-              label="Done"
-              onPress={() => setShowScoreInfo(false)}
-            />
-          </View>
-        </View>
-      </Modal>
     </ScreenContainer>
   );
 }
 
 function getStyles(colors, typography) {
   return StyleSheet.create({
-    centeredContent: {
-      flexGrow: 1,
-      alignItems: "center",
-    },
-    backButton: {
-      alignSelf: "flex-start",
-    },
-    headerRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-    },
-    headerTitle: {
-      ...typography.heading,
-      fontSize: 18,
-      flex: 1,
-      marginHorizontal: spacing.sm,
-    },
-    heading: {
-      ...typography.heading,
-      fontSize: 17,
-      marginTop: spacing.lg,
-      marginBottom: spacing.sm,
-    },
-    attemptSubtitle: {
-      ...typography.body,
-      marginTop: spacing.xs,
-      textAlign: "center",
-    },
-    orbGlow: {
-      width: 236,
-      height: 236,
-      borderRadius: 118,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: "rgba(46,107,255,0.08)",
-      borderWidth: 1,
-      borderColor: "rgba(46,107,255,0.18)",
-      marginTop: spacing.xl,
-    },
-    orb: {
-      width: 200,
-      height: 200,
-      borderRadius: 100,
-      backgroundColor: "#0B1445",
-      alignItems: "center",
-      justifyContent: "center",
-      shadowColor: "#2E6BFF",
-      shadowOpacity: 0.55,
-      shadowOffset: { width: 0, height: 0 },
-      shadowRadius: 24,
-      elevation: 8,
-    },
-    orbWave: {
-      width: 130,
-    },
-    recordingMeta: {
-      ...typography.body,
-      textAlign: "center",
-      marginTop: spacing.lg,
-    },
-    recordingHint: {
-      ...typography.body,
-      textAlign: "center",
-      lineHeight: 20,
-      marginTop: spacing.md,
-      paddingHorizontal: spacing.lg,
-    },
-    recordingSpacer: {
-      flexGrow: 1,
-      minHeight: spacing.xl,
-    },
-    fullWaveform: {
-      alignSelf: "stretch",
-      marginBottom: spacing.lg,
-    },
-    controlsRow: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      justifyContent: "space-evenly",
-      alignSelf: "stretch",
-      marginBottom: spacing.md,
-    },
-    controlItem: {
-      alignItems: "center",
-      gap: spacing.sm,
-    },
-    controlButton: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.cardBorder,
-      alignItems: "center",
-      justifyContent: "center",
-      shadowColor: "#101828",
-      shadowOpacity: 0.05,
-      shadowOffset: { width: 0, height: 4 },
-      shadowRadius: 12,
-      elevation: 2,
-    },
-    micButton: {
-      width: 64,
-      height: 64,
-      borderRadius: 32,
-      backgroundColor: colors.accent,
-      alignItems: "center",
-      justifyContent: "center",
-      shadowColor: "#2E6BFF",
-      shadowOpacity: 0.35,
-      shadowOffset: { width: 0, height: 4 },
-      shadowRadius: 12,
-      elevation: 4,
-    },
-    controlLabel: {
-      fontSize: 13,
-      fontWeight: "600",
-      color: colors.textSecondary,
-    },
-    textButton: {
-      alignItems: "center",
-      paddingVertical: spacing.sm,
-    },
-    textButtonLabel: {
-      fontSize: 13,
-      fontWeight: "700",
-      color: colors.textSecondary,
-    },
-    reviewCard: {
-      backgroundColor: colors.card,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: colors.cardBorder,
-      padding: spacing.md,
-      marginBottom: spacing.md,
-      shadowColor: "#101828",
-      shadowOpacity: 0.05,
-      shadowOffset: { width: 0, height: 4 },
-      shadowRadius: 12,
-      elevation: 2,
-    },
-    reviewPosition: {
-      fontSize: 12,
-      color: colors.textSecondary,
-      marginTop: spacing.sm,
-      textAlign: "center",
-    },
-    useRecordingButton: {
-      marginTop: spacing.sm,
-    },
-    processingTitle: {
-      ...typography.heading,
-      fontSize: 18,
-      marginBottom: spacing.xl,
-      textAlign: "center",
-    },
-    processingRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      alignSelf: "stretch",
-      marginBottom: spacing.md,
-    },
-    processingLabel: {
-      fontSize: 14,
-      fontWeight: "600",
-      color: colors.navy,
-      marginLeft: spacing.sm,
-    },
-    processingLabelPending: {
-      color: colors.textSecondary,
-      fontWeight: "500",
-    },
-    processingHint: {
-      ...typography.body,
-      marginTop: spacing.md,
-    },
-    transcriptHeading: {
-      ...typography.heading,
-      fontSize: 18,
-      marginTop: spacing.lg,
-    },
-    transcriptSubtitle: {
-      ...typography.body,
-      marginTop: spacing.xs,
-      marginBottom: spacing.md,
-    },
-    transcriptInput: {
-      backgroundColor: colors.inputBackground,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: colors.border,
-      padding: spacing.md,
-      minHeight: 180,
-      fontSize: 14,
-      color: colors.textPrimary,
-    },
-    wordCount: {
-      fontSize: 12,
-      color: colors.textSecondary,
-      marginTop: spacing.xs,
-    },
-    sectionLabel: {
-      fontSize: 12,
-      fontWeight: "700",
-      color: colors.textSecondary,
-      letterSpacing: 0.6,
-      marginBottom: spacing.sm,
-      marginTop: spacing.lg,
-    },
-    scoreRow: {
-      flexDirection: "row",
-      alignItems: "flex-end",
-    },
-    scoreLabel: {
-      fontSize: 12,
-      fontWeight: "700",
-      color: colors.textSecondary,
-      letterSpacing: 0.6,
-      textAlign: "center",
-      marginTop: spacing.lg,
-    },
-    scoreValue: {
-      fontSize: 44,
-      fontWeight: "800",
-      color: colors.navy,
-      textAlign: "center",
-    },
-    scoreMax: {
-      fontSize: 14,
-      color: colors.textSecondary,
-      textAlign: "center",
-    },
-    scoreDelta: {
-      fontSize: 13,
-      fontWeight: "600",
-      color: colors.success,
-      marginTop: spacing.sm,
-      textAlign: "center",
-    },
-    scoreInfoLink: {
-      fontSize: 13,
-      fontWeight: "600",
-      color: colors.accent,
-      textDecorationLine: "underline",
-      marginTop: spacing.xs,
-      textAlign: "center",
-    },
-    nextStepCard: {
-      backgroundColor: colors.inputBackground,
-      borderRadius: radius.md,
-      padding: spacing.md,
-      marginTop: spacing.lg,
-    },
-    nextStepHeader: {
-      flexDirection: "row",
-      alignItems: "center",
-    },
-    nextStepLabel: {
-      fontSize: 11,
-      fontWeight: "700",
-      color: colors.navy,
-      letterSpacing: 0.6,
-      marginLeft: spacing.xs,
-    },
-    nextStepText: {
-      fontSize: 14,
-      fontWeight: "600",
-      color: colors.navySoft,
-      marginTop: spacing.xs,
-      marginBottom: spacing.sm,
-    },
-    metricsGrid: {
-      gap: spacing.sm,
-    },
-    metricsRow: {
-      flexDirection: "row",
-      gap: spacing.sm,
-    },
-    structureCard: {
-      backgroundColor: colors.card,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: colors.cardBorder,
-      padding: spacing.md,
-      shadowColor: "#101828",
-      shadowOpacity: 0.05,
-      shadowOffset: { width: 0, height: 4 },
-      shadowRadius: 12,
-      elevation: 2,
-    },
-    structureRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      paddingVertical: spacing.xs,
-    },
-    structureLabel: {
-      fontSize: 13,
-      color: colors.navySoft,
-    },
-    structureValue: {
-      fontSize: 13,
-      fontWeight: "700",
-      color: colors.navy,
-    },
-    listCard: {
-      backgroundColor: colors.card,
-      borderRadius: radius.md,
-      borderWidth: 1,
-      borderColor: colors.cardBorder,
-      padding: spacing.md,
-      marginTop: spacing.md,
-      shadowColor: "#101828",
-      shadowOpacity: 0.05,
-      shadowOffset: { width: 0, height: 4 },
-      shadowRadius: 12,
-      elevation: 2,
-    },
-    cardHeaderRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginBottom: spacing.sm,
-    },
-    cardHeading: {
-      fontSize: 12,
-      fontWeight: "700",
-      color: colors.navy,
-      letterSpacing: 0.6,
-      marginLeft: spacing.xs,
-    },
-    checklistRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginBottom: spacing.xs,
-    },
-    checklistText: {
-      fontSize: 13,
-      color: colors.navySoft,
-      marginLeft: spacing.xs,
-      flexShrink: 1,
-    },
-    numberedRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginBottom: spacing.sm,
-    },
-    numberedBadge: {
-      width: 18,
-      height: 18,
-      borderRadius: radius.pill,
-      backgroundColor: colors.inputBackground,
-      alignItems: "center",
-      justifyContent: "center",
-      marginRight: spacing.xs,
-    },
-    numberedBadgeText: {
-      fontSize: 11,
-      fontWeight: "700",
-      color: colors.navySoft,
-    },
-    chipRow: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-    },
-    reflectionPrompt: {
-      fontSize: 13,
-      fontWeight: "600",
-      color: colors.navySoft,
-      marginBottom: spacing.sm,
-    },
-    reflectionInput: {
-      backgroundColor: colors.inputBackground,
-      borderRadius: radius.sm,
-      borderWidth: 1,
-      borderColor: colors.border,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 10,
-      fontSize: 13,
-      color: colors.textPrimary,
-      marginBottom: spacing.sm,
-    },
-    saveNoteButton: {
-      alignSelf: "flex-end",
-      backgroundColor: colors.accent,
-      borderRadius: radius.pill,
-      paddingVertical: 8,
-      paddingHorizontal: spacing.md,
-    },
-    saveNoteButtonText: {
-      fontSize: 12,
-      fontWeight: "700",
-      color: "#FFFFFF",
-    },
-    backToSessionLink: {
-      alignItems: "center",
-      marginTop: spacing.lg,
-    },
-    backToSessionText: {
-      fontSize: 13,
-      fontWeight: "700",
-      color: colors.accent,
-    },
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: "rgba(16, 24, 40, 0.5)",
-      justifyContent: "flex-end",
-    },
-    modalCard: {
-      backgroundColor: colors.card,
-      borderTopLeftRadius: radius.lg,
-      borderTopRightRadius: radius.lg,
-      padding: spacing.lg,
-    },
-    modalTitle: {
-      ...typography.heading,
-      fontSize: 18,
-      marginBottom: spacing.md,
-    },
-    modalDescription: {
-      ...typography.body,
-      marginTop: spacing.md,
-      marginBottom: spacing.md,
-    },
+    centeredContent: { flexGrow: 1, alignItems: "center" },
+    backButton: { alignSelf: "flex-start", marginBottom: spacing.lg },
+    processingTitle: { ...typography.heading, fontSize: 18, marginBottom: spacing.xl, textAlign: "center" },
+    processingRow: { flexDirection: "row", alignItems: "center", alignSelf: "stretch", marginBottom: spacing.md },
+    processingLabel: { fontSize: 14, fontWeight: "600", color: colors.navy, marginLeft: spacing.sm },
+    processingLabelPending: { color: colors.textSecondary, fontWeight: "500" },
+    processingLabelError: { color: "#D92D20", fontWeight: "600" },
+    processingHint: { ...typography.body, marginTop: spacing.md },
+    uploadErrorText: { ...typography.body, color: "#D92D20", lineHeight: 20, marginTop: spacing.md, textAlign: "center" },
+    retryButton: { alignSelf: "stretch", marginTop: spacing.md },
+    transcriptCard: { alignSelf: "stretch", backgroundColor: colors.inputBackground, borderRadius: radius.md,
+      borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginTop: spacing.lg },
+    transcriptHeading: { ...typography.heading, fontSize: 18, marginBottom: spacing.sm },
+    transcriptText: { ...typography.body, color: colors.textPrimary, lineHeight: 22 },
+    backToSessionLink: { alignItems: "center", marginTop: spacing.lg },
+    backToSessionText: { fontSize: 13, fontWeight: "700", color: colors.accent },
   });
 }

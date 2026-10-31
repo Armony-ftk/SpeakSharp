@@ -10,6 +10,7 @@ export default function ProgressMetricCard({
   currentLabel = "Current",
   currentValue,
   delta,
+  deltaTone = "positive",
 }) {
   const { colors } = useAppTheme();
   const styles = getStyles(colors);
@@ -19,8 +20,8 @@ export default function ProgressMetricCard({
       <View style={styles.headerRow}>
         <Text style={styles.label}>{label}</Text>
         {delta ? (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{delta}</Text>
+          <View style={[styles.badge, deltaTone === "neutral" && styles.neutralBadge]}>
+            <Text style={[styles.badgeText, deltaTone === "neutral" && styles.neutralBadgeText]}>{delta}</Text>
           </View>
         ) : null}
       </View>
@@ -80,6 +81,12 @@ function getStyles(colors) {
       fontSize: 11,
       fontWeight: "700",
       color: colors.success,
+    },
+    neutralBadge: {
+      backgroundColor: colors.inputBackground,
+    },
+    neutralBadgeText: {
+      color: colors.textSecondary,
     },
     valuesRow: {
       flexDirection: "row",
