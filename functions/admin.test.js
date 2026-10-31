@@ -5,6 +5,7 @@ const { HttpsError } = require("firebase-functions/v2/https");
 
 const {
   createSessionCountProvider,
+  createAdminStatsProvider,
   createGetAdminStats,
   createCallableGetAdminStats,
 } = require("./admin");
@@ -258,3 +259,93 @@ test("callable maps unexpected provider errors to a generic internal error", asy
       error.message === "Unable to load administrator statistics.",
   );
 });
+
+// Deliberately supports only aggregations and empty field projections, so an
+// accidental full collection/document read fails these provider tests.
+function statsDependencies({ failQuery, authPages = [{ users: [] }] } = {}) {
+  const calls = [];
+  function query(name, filters = []) {
+    return {
+      where(field, operator, value) {
+        return query(name, [...filters, [String(field), operator, value]]);
+      },
+      count() {
+        return { get: async () => {
+          calls.push([name, "count", filters]);
+          if (failQuery === `${name}:count`) throw new Error("private query details");
+          return { data: () => ({ count: name === "users" ? filters[0][2].length : 0 }) };
+        } };
+      },
+      select(...fields) {
+        assert.deepEqual(fields, []);
+        return { get: async () => {
+          calls.push([name, "select", filters]);
+          if (failQuery === `${name}:select`) throw new Error("private query details");
+          return { docs: [] };
+        } };
+      },
+    };
+  }
+  return {
+    calls,
+    now: () => Date.parse("2026-11-01T12:00:00Z"),
+    getDb: () => ({ collection: query, collectionGroup: query }),
+    getAuth: () => ({ listUsers: async (size, token) => {
+      assert.equal(size, 1000);
+      if (failQuery === "auth") throw new Error("private auth details");
+      calls.push(["auth", token]);
+      return authPages[token ? Number(token) : 0];
+    } }),
+  };
+}
+
+test("stats uses every Auth page, skips admins, and batches profile counts within the in-query limit", async () => {
+  const dependencies = statsDependencies({ authPages: [
+    { users: [
+      { uid: "admin", customClaims: { admin: true } },
+      ...Array.from({ length: 31 }, (_, i) => ({ uid: `user-${i}` })),
+    ], pageToken: "1" },
+    { users: [{ uid: "suspended", disabled: true }] },
+  ] });
+  const result = await createAdminStatsProvider(dependencies)();
+  assert.equal(result.totalUsers, 32);
+  const profileCounts = dependencies.calls.filter(([name]) => name === "users");
+  assert.deepEqual(profileCounts.map(([, , filters]) => filters[0][2].length), [30, 1, 1]);
+  assert.ok(profileCounts.every(([, , filters]) =>
+    filters[0][0] === "__name__" && filters[0][1] === "in" && !filters[0][2].includes("admin")));
+  assert.deepEqual(dependencies.calls.filter(([name]) => name === "auth"), [["auth", undefined], ["auth", "1"]]);
+});
+
+test("stats returns real zeros and requests only paths within the fixed seven-day window", async () => {
+  const dependencies = statsDependencies();
+  const handler = createCallableGetAdminStats({
+    requireAdmin: async () => {},
+    getStats: createAdminStatsProvider(dependencies),
+  });
+  assert.deepEqual(await handler({}), {
+    totalUsers: 0, totalSessions: 0, totalRecordings: 0,
+    recentlyActiveUsers: 0, activityWindowDays: 7, recentActivity: null,
+  });
+  const recentQueries = dependencies.calls.filter(([, operation]) => operation === "select");
+  assert.deepEqual(recentQueries.map(([name]) => name), ["sessions", "recordings"]);
+  for (const [, , filters] of recentQueries) {
+    assert.deepEqual(filters, [
+      ["createdAt", ">=", new Date("2026-10-25T12:00:00Z")],
+      ["createdAt", "<=", new Date("2026-11-01T12:00:00Z")],
+    ]);
+  }
+});
+
+for (const failQuery of ["auth", "users:count", "sessions:count", "recordings:count", "sessions:select", "recordings:select"]) {
+  test(`stats propagates ${failQuery} failures without returning zero or private details`, async () => {
+    const handler = createCallableGetAdminStats({
+      requireAdmin: async () => {},
+      getStats: createAdminStatsProvider(statsDependencies({
+        failQuery, authPages: [{ users: [{ uid: "user" }] }],
+      })),
+    });
+    await assert.rejects(handler({}), {
+      code: "internal", message: "Unable to load administrator statistics.",
+    });
+  });
+}

@@ -76,6 +76,23 @@ test("dashboard displays session statistics, unavailable metrics, and opens dire
   expect(router.push).toHaveBeenCalledWith("/admin/users");
 });
 
+test("dashboard displays all four numeric statistics and the seven-day label", async () => {
+  getAdminStats.mockResolvedValue({ totalUsers: 3, totalSessions: 12, totalRecordings: 25, recentlyActiveUsers: 2, activityWindowDays: 7, recentActivity: null });
+  const view = await render(React.createElement(Dashboard));
+  await waitFor(() => expect(view.getByText("25")).toBeTruthy());
+  for (const value of ["3", "12", "2", "Last 7 days"]) {
+    expect(view.getByText(value)).toBeTruthy();
+  }
+  expect(view.queryByText("Unavailable")).toBeNull();
+});
+
+test("dashboard displays legitimate zero statistics", async () => {
+  getAdminStats.mockResolvedValue({ totalUsers: 0, totalSessions: 0, totalRecordings: 0, recentlyActiveUsers: 0, activityWindowDays: 7, recentActivity: null });
+  const view = await render(React.createElement(Dashboard));
+  await waitFor(() => expect(view.getAllByText("0")).toHaveLength(4));
+  expect(view.queryByText("Unavailable")).toBeNull();
+});
+
 test("directory applies the search and opens the matching user details", async () => {
   getUsers.mockResolvedValue({ items: [{ userId: "normal", fullName: "Demo User", email: "demo@example.test", accountStatus: "active" }], total: 1, nextCursor: null });
   const view = await render(React.createElement(Users));
