@@ -91,9 +91,6 @@ export default function SignInScreen() {
         onPress={handleSignIn}
       />
 
-      <OrDivider label="Or continue with" />
-      <GoogleButton onPress={() => {}} disabled />
-
       <View style={styles.footerRow}>
         <Text style={styles.footerText}>Don't have an account? </Text>
         <Link href="/sign-up" style={styles.footerLink}>

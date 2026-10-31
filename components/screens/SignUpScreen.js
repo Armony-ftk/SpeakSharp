@@ -166,9 +166,6 @@ export default function SignUpScreen() {
         onPress={handleCreateAccount}
       />
 
-      <OrDivider />
-      <GoogleButton label="Sign up with Google" onPress={() => {}} disabled />
-
       <View style={styles.footerRow}>
         <Text style={styles.footerText}>Already have an account? </Text>
         <Link href="/sign-in" style={styles.footerLink}>

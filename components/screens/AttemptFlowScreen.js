@@ -136,8 +136,20 @@ function RecordingProcessing({ sessionId, recordingId }) {
     && ([RECORDING_STATUS.TRANSCRIPT_READY, RECORDING_STATUS.ANALYSING, RECORDING_STATUS.COMPLETED].includes(status)
       || metricsProgress.failed || analysisProgress.failed);
   const failed = status === RECORDING_STATUS.FAILED;
+  // A listener snapshot can confirm upload before the local upload promise settles.
+  const uploadDone = uploadState === "done" || (uploadState !== "error"
+    && ((Boolean(recording?.uploadedAt) && uploadState !== "uploading")
+      || [RECORDING_STATUS.TRANSCRIBING, RECORDING_STATUS.TRANSCRIPT_READY,
+        RECORDING_STATUS.ANALYSING, RECORDING_STATUS.COMPLETED].includes(status)));
   const waiting = status === RECORDING_STATUS.PENDING_UPLOAD && uploadState === "done";
   const canRetryProcessing = (failed || waiting) && !hasSavedTranscript(recording) && !metricsProgress.failed;
+  // Match the existing callable's six-minute stall condition for presentation only.
+  // Re-evaluate on render/re-entry; do not add a timer or change retry operations.
+  const analysisWaiting = metricsProgress.ready && status === RECORDING_STATUS.TRANSCRIPT_READY;
+  const analysisSince = (analysisProgress.active ? recording?.analysisJob?.startedAt
+    : analysisWaiting ? recording?.updatedAt : null)?.toMillis?.();
+  const analysisStalled = Number.isFinite(analysisSince) && Date.now() - analysisSince > 6 * 60 * 1000;
+  const showAnalysisRetry = analysisProgress.failed || analysisStalled || retryingAnalysis || Boolean(analysisRetryError);
   const goBack = () => router.replace({ pathname: "/session/[id]", params: { id: sessionId } });
 
   if (!recording && !listenerError) {
@@ -173,13 +185,13 @@ function RecordingProcessing({ sessionId, recordingId }) {
       </TouchableOpacity>
       <Text style={styles.processingTitle}>
         {analysisProgress.ready ? "Analysis complete" : failed ? "Processing failed"
-          : analysisProgress.active ? "Generating AI feedback" : metricsProgress.ready ? "Preparing AI feedback"
+          : analysisProgress.active ? "Generating AI feedback" : metricsProgress.ready ? "Speaking metrics complete"
             : transcriptReady ? "Transcription complete" : "Processing your recording"}
       </Text>
       {PROCESSING_STEPS.map((step, index) => {
-        const done = index === 0 ? uploadState === "done" : index === 1 ? transcriptReady
+        const done = index === 0 ? uploadDone : index === 1 ? transcriptReady
           : index === 2 ? metricsProgress.ready : analysisProgress.ready;
-        const active = !listenerError && (index === 0
+        const active = !done && !listenerError && (index === 0
           ? uploadState === "pending" || uploadState === "uploading"
           : index === 1 ? status === RECORDING_STATUS.TRANSCRIBING
             : index === 2 ? metricsProgress.active : analysisProgress.active);
@@ -228,19 +240,18 @@ function RecordingProcessing({ sessionId, recordingId }) {
       ) : (
         <Text style={styles.processingHint}>
           {analysisProgress.ready ? "Your transcript, speaking metrics and AI feedback are saved."
-            : analysisProgress.active ? "Your AI feedback is being generated. You can leave this screen and return later. If this step stays active for more than six minutes, retry AI analysis."
-              : metricsProgress.ready ? "Your transcript and speaking metrics are saved. Waiting for AI analysis to start. If this takes more than six minutes, retry AI analysis."
+            : analysisProgress.active ? "Your AI feedback is being generated. You can leave this screen and return later. If this step stays active for more than six minutes, reopen this recording to retry AI analysis."
+              : metricsProgress.ready ? "Your transcript and speaking metrics are saved. Waiting for AI analysis to start. If this takes more than six minutes, reopen this recording to retry AI analysis."
             : transcriptReady ? "Your transcript is saved. Speaking metrics are being calculated."
             : waiting ? "Your upload is complete. Waiting for the transcription service. You can leave this screen and return later."
               : "This may take a moment. Your saved recording will be kept."}
         </Text>
       )}
-      {canRetryProcessing && uploadState === "done" && !listenerError ? (
-        <PrimaryButton label={failed ? "RETRY TRANSCRIPTION" : "RETRY PROCESSING"}
+      {failed && canRetryProcessing && uploadState === "done" && !listenerError ? (
+        <PrimaryButton label="RETRY TRANSCRIPTION"
           onPress={() => startUpload(true)} style={styles.retryButton} />
       ) : null}
-      {(analysisProgress.failed || analysisProgress.active
-        || (metricsProgress.ready && status === RECORDING_STATUS.TRANSCRIPT_READY)) && !listenerError ? (
+      {showAnalysisRetry && !listenerError ? (
         <>
           {analysisRetryError ? <Text style={styles.uploadErrorText}>{analysisRetryError}</Text> : null}
           <PrimaryButton label="RETRY AI ANALYSIS" onPress={retryAnalysis}

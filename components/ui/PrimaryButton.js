@@ -74,6 +74,7 @@ function getStyles(colors) {
       shadowOffset: { width: 0, height: 4 },
       shadowRadius: 10,
       elevation: 3,
+      marginBottom: spacing.sm,
     },
     buttonPill: {
       borderRadius: radius.pill,
