@@ -11,7 +11,12 @@ import { useAuth } from '../hooks/useAuth';
 
 function RootLayoutNav() {
   const { colors, isDark } = useAppTheme();
-  const { currentUser, initializing, isEmailVerified } = useAuth();
+  const {
+    currentUser,
+    initializing,
+    isEmailVerified,
+    role,
+  } = useAuth();
 
   if (initializing) {
     return <SplashScreen />;
@@ -19,7 +24,10 @@ function RootLayoutNav() {
 
   const isSignedOut = !currentUser;
   const needsVerification = Boolean(currentUser) && !isEmailVerified;
-  const hasAppAccess = Boolean(currentUser) && isEmailVerified;
+  const hasAppAccess = Boolean(currentUser) && isEmailVerified
+    && (role === 'user' || role === 'admin');
+  const hasAdminRouteAccess =
+    Boolean(currentUser) && isEmailVerified;
 
   return (
     <AccountDataProvider key={hasAppAccess ? currentUser.uid : 'signed-out'} enabled={hasAppAccess}>
@@ -41,6 +49,10 @@ function RootLayoutNav() {
 
           <Stack.Protected guard={needsVerification}>
             <Stack.Screen name="verify-email" />
+          </Stack.Protected>
+
+          <Stack.Protected guard={hasAdminRouteAccess}>
+            <Stack.Screen name="admin" options={{ headerShown: false }} />
           </Stack.Protected>
 
           <Stack.Protected guard={hasAppAccess}>

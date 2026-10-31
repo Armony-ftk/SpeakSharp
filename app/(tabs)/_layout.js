@@ -2,6 +2,10 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../constants/ThemeContext';
 
+export const unstable_settings = {
+  anchor: 'home',
+};
+
 export default function TabsLayout() {
   const { colors } = useAppTheme();
 
