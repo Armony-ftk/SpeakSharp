@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { router } from "expo-router";
 import ScreenContainer from "../ui/ScreenContainer";
 import AppHeader from "../ui/AppHeader";
 import FilterTabs from "../ui/FilterTabs";
@@ -15,10 +15,7 @@ import EmptyState from "../ui/EmptyState";
 import FloatingActionButton from "../ui/FloatingActionButton";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
-import {
-  getSessionErrorMessage,
-  getSessions,
-} from "../../services/sessionService";
+import { useAccountData } from "../../context/AccountDataContext";
 
 const FILTERS = [
   { label: "Active", value: "active" },
@@ -40,29 +37,9 @@ function formatPresentationDate(value) {
 
 export default function SessionsScreen() {
   const [filter, setFilter] = useState("active");
-  const [sessions, setSessions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState("");
+  const { sessions, loading, errorMessage, retry: loadSessions, localQueueError } = useAccountData();
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
-
-  const loadSessions = useCallback(async () => {
-    setLoading(true);
-    setErrorMessage("");
-    try {
-      setSessions(await getSessions());
-    } catch (error) {
-      setErrorMessage(getSessionErrorMessage(error));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadSessions();
-    }, [loadSessions]),
-  );
 
   const filteredSessions = sessions.filter(
     (session) => session.status === filter,
@@ -87,6 +64,7 @@ export default function SessionsScreen() {
       </Text>
 
       <FilterTabs options={FILTERS} value={filter} onChange={setFilter} />
+      {localQueueError ? <Text style={styles.subtitle}>{localQueueError}</Text> : null}
 
       {loading && sessions.length === 0 ? (
         <View style={styles.emptyBody}>

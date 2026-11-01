@@ -41,7 +41,7 @@ export default function HomeScreen() {
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
   const { profile, sessions, progress, loading, errorMessage, retry,
-    profileLoading, profileErrorMessage, retryProfile } = useAccountData();
+    profileLoading, profileErrorMessage, retryProfile, pendingRecordings = [], localQueueError } = useAccountData();
   const firstName = getFullName(profile?.fullName).split(/\s+/)[0] || "there";
   const nextAction = getNextBestAction(sessions);
   const { overview } = progress;
@@ -59,7 +59,7 @@ export default function HomeScreen() {
     );
   }
 
-  if (errorMessage || sessions.length === 0) {
+  if ((errorMessage && pendingRecordings.length === 0) || sessions.length === 0) {
     return (
       <ScreenContainer contentStyle={styles.emptyContent}>
         <AppHeader />
@@ -104,7 +104,6 @@ export default function HomeScreen() {
             activeOpacity={0.8}
           >
             <Ionicons name="add" size={16} color={colors.textPrimary} />
-            <Text style={styles.newPillLabel}>New Presentation</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -115,6 +114,12 @@ export default function HomeScreen() {
       <Text style={styles.subtitle}>
         Ready to improve your next presentation?
       </Text>
+      {errorMessage || localQueueError ? (
+        <>
+          <Text style={styles.emptyDescription}>{errorMessage || localQueueError} Showing recordings available on this device.</Text>
+          <PrimaryButton label="TRY AGAIN" onPress={retry} />
+        </>
+      ) : null}
       {profileErrorMessage ? (
         <>
           <Text style={styles.emptyDescription}>{profileErrorMessage}</Text>

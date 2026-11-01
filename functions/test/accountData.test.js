@@ -97,8 +97,14 @@ async function fixture() {
   const authHook = { useAuth: () => ({ currentUser: user, initializing }) };
   const progress = load("hooks/useProgress.js", { react: runtime.react, "firebase/firestore": firestore,
     "../config/firebase": { db: {} }, "./useAuth": authHook, "../utils/progressStats": stats });
+  let pendingRecordings = [];
+  const queue = load("storage/recordingQueue.js", {
+    "@react-native-async-storage/async-storage": {}, "./audioStorage": {}, "../constants/recording": {},
+  });
   const account = load("context/AccountDataContext.js", { react: runtime.react, "firebase/firestore": firestore,
-    "../config/firebase": { db: {} }, "../hooks/useAuth": authHook, "../hooks/useProgress": progress });
+    "../config/firebase": { db: {} }, "../hooks/useAuth": authHook, "../hooks/useProgress": progress,
+    "../hooks/useRecordingQueue": { useRecordingQueue: (uid) => ({ entries: pendingRecordings.filter((entry) => entry.userId === uid), online: true }) },
+    "../storage/recordingQueue": { ...queue, removeQueuedRecording: async () => {} }, "../utils/progressStats": stats });
   const render = (flush = true) => {
     const tree = runtime.render(() => account.AccountDataProvider({ enabled, children: "Screens" }), flush);
     value = tree.props.value;
@@ -121,6 +127,7 @@ async function fixture() {
   const screens = Object.fromEntries(["Home", "Profile", "Progress"].map((name) =>
     [name, load(`components/screens/${name}Screen.js`, imports).default]));
   return { render, listeners, screens, imports, auth, stats, profileUtils,
+    pending: (entries) => { pendingRecordings = entries; },
     user: (next) => { user = next; }, enabled: (next) => { enabled = next; },
     initializing: (next) => { initializing = next; }, dark: (next) => { dark = next; },
     route: () => route, unmount: runtime.unmount,
@@ -131,6 +138,30 @@ async function fixture() {
     },
   };
 }
+
+test("local-first attempts remain shared and deduplicated before session snapshots and through completed handoff", async () => {
+  const f = await fixture();
+  const pending = [1, 2, 3].map((number) => ({ userId: "alice", sessionId: "offline", recordingId: `r${number}`,
+    durationSeconds: 30, createdAt: 1000 * number, syncStatus: "queued",
+    session: { id: "offline", title: "Offline presentation", status: "active" } }));
+  f.pending(pending);
+  let value = f.render();
+  assert.equal(value.loading, false); assert.equal(value.profileLoading, false);
+  assert.equal(value.sessions[0].title, "Offline presentation");
+  assert.equal(value.progress.overview.attempts, 3); assert.equal(value.progress.overview.average, null);
+  assert.match(textOf(f.screens.Home()), /Offline presentation/);
+  assert.equal(nodes(f.screens.Profile(), "ProfileStatCard").find((node) => node.props.label === "Total Sessions").props.value, 1);
+  f.emit("users/alice/sessions", [{ id: "offline", title: "Offline presentation", status: "active" }]);
+  f.emit("users/alice/sessions/offline/recordings", [{ id: "r1", processingStatus: "pending_upload" }]);
+  value = f.render(); assert.equal(value.progress.overview.attempts, 3);
+  f.emit("users/alice/sessions/offline/recordings", [rated("r1", 8)]);
+  value = f.render(); assert.equal(value.progress.overview.average, 8); assert.equal(value.progress.overview.attempts, 3);
+  f.pending(pending.slice(1)); value = f.render();
+  assert.equal(value.progress.overview.attempts, 3); assert.equal(value.progress.overview.average, 8);
+  f.user({ uid: "bob" }); value = f.render();
+  assert.equal(value.pendingRecordings.length, 0); assert.equal(value.sessions.length, 0);
+  f.unmount();
+});
 
 test("one shared chain updates all consumers, session ordering, metadata and recording-derived cards", async () => {
   const f = await fixture();

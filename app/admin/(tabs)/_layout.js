@@ -11,10 +11,14 @@ export default function AdminTabsLayout() {
 
   return (
     <Tabs
+      backBehavior="initialRoute"
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.navy,
+        tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.placeholder,
+        tabBarLabelPosition: "below-icon",
+        tabBarLabelStyle: { fontSize: 12, fontWeight: "600" },
+        tabBarHideOnKeyboard: true,
         tabBarStyle: {
           backgroundColor: colors.card,
           borderTopColor: colors.border,

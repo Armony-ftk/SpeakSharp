@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import EmptyState from "../ui/EmptyState";
 import { useFocusEffect } from "expo-router";
@@ -19,16 +19,6 @@ import { useAppTheme } from "../../constants/ThemeContext";
 import { getActivityLogs } from "../../services/adminService";
 
 const PAGE_SIZE = 20;
-
-// `value` is what adminService.getActivityLogs expects for `type`.
-const TYPE_OPTIONS = [
-  { label: "All", value: "all" },
-  { label: "Sessions", value: "sessions" },
-  { label: "Recordings", value: "recordings" },
-  { label: "Analysis", value: "analysis" },
-  { label: "Errors", value: "errors" },
-  { label: "Admin", value: "Admin" },
-];
 
 function getErrorState(error) {
   if (error?.code === "permission-denied") {
@@ -66,23 +56,14 @@ function OnlineRequiredBanner({ onRetry, styles, colors }) {
           Admin information requires an internet connection.
         </Text>
       </View>
-      <PrimaryButton label="Retry" onPress={onRetry} style={styles.retryButton} />
+      <PrimaryButton admin label="Retry" onPress={onRetry} style={styles.retryButton} />
     </View>
   );
 }
 
 export default function AdminActivityScreen() {
-  const { colors, typography } = useAppTheme();
-  const styles = getStyles(colors, typography);
-  const params = useLocalSearchParams();
-
-  // Optional user filter, passed as a route param (e.g. from User Details).
-  const rawUserId = Array.isArray(params.userId)
-    ? params.userId[0]
-    : params.userId;
-  const userId = rawUserId || null;
-
-  const [type, setType] = useState("all");
+  const { colors } = useAppTheme();
+  const styles = getStyles(colors);
   const [events, setEvents] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [loadState, setLoadState] = useState("loading");
@@ -90,9 +71,7 @@ export default function AdminActivityScreen() {
   const [retryCount, setRetryCount] = useState(0);
   const requestIdRef = useRef(0);
 
-  const hasFilters = type !== "all" || Boolean(userId);
-
-  // New filter, new user filter or refresh: reset results and fetch page 1.
+  // Refresh resets results and fetches the first unfiltered page.
   useEffect(() => {
     const requestId = ++requestIdRef.current;
 
@@ -102,8 +81,8 @@ export default function AdminActivityScreen() {
     setLoadMoreState("idle");
 
     getActivityLogs({
-      type,
-      userId: userId || undefined,
+      type: "all",
+      userId: null,
       pageSize: PAGE_SIZE,
       cursor: null,
     })
@@ -130,7 +109,7 @@ export default function AdminActivityScreen() {
         requestIdRef.current += 1;
       }
     };
-  }, [type, userId, retryCount]);
+  }, [retryCount]);
 
   const refresh = useCallback(() => {
     setRetryCount((count) => count + 1);
@@ -151,8 +130,8 @@ export default function AdminActivityScreen() {
     setLoadMoreState("loading");
 
     getActivityLogs({
-      type,
-      userId: userId || undefined,
+      type: "all",
+      userId: null,
       pageSize: PAGE_SIZE,
       cursor: nextCursor,
     })
@@ -179,24 +158,12 @@ export default function AdminActivityScreen() {
           setLoadMoreState(getErrorState(error));
         }
       });
-  }, [loadMoreState, nextCursor, type, userId]);
+  }, [loadMoreState, nextCursor]);
 
   const retryMore = useCallback(() => {
     setLoadMoreState("idle");
     loadMore();
   }, [loadMore]);
-
-  const clearUserFilter = useCallback(() => {
-    // An empty string removes the filter; `userId` above treats "" as none.
-    router.setParams({ userId: "" });
-  }, []);
-
-  const clearFilters = useCallback(() => {
-    setType("all");
-    if (userId) {
-      clearUserFilter();
-    }
-  }, [clearUserFilter, userId]);
 
   const goToUser = useCallback((targetUserId) => {
     router.push({
@@ -205,73 +172,13 @@ export default function AdminActivityScreen() {
     });
   }, []);
 
-  // Show a name, never the raw UID.
-  const filteredUserName = userId
-    ? events.find((event) => event.userName)?.userName || "this user"
-    : null;
-
   const showInitialError = loadState === "error" || loadState === "forbidden";
   const isOffline = loadState === "offline" || loadMoreState === "offline";
   const hasNoEvents = loadState === "success" && events.length === 0;
 
   return (
-    <ScreenContainer>
-      <View style={styles.headerSpacing}>
-        <AdminHeader title="Activity" />
-      </View>
-
-      <Text style={styles.note}>
-        Shows recorded system activity, not live microphone monitoring.
-      </Text>
-
-      {__DEV__ ? (
-        <View style={styles.demoNotice} accessibilityRole="text">
-          <Ionicons name="flask-outline" size={16} color={colors.accent} />
-          <Text style={styles.demoNoticeText}>Demo Data</Text>
-        </View>
-      ) : null}
-
-      <Text accessibilityRole="text" style={styles.filterLabel}>
-        Filter activity by event type
-      </Text>
-      <View style={styles.chips}>
-        {TYPE_OPTIONS.map((option) => {
-          const selected = option.value === type;
-          return (
-            <TouchableOpacity
-              key={option.value}
-              accessibilityRole="button"
-              accessibilityLabel={`Filter activity: ${option.label}`}
-              accessibilityState={{ selected }}
-              style={[styles.chip, selected && styles.chipActive]}
-              onPress={() => setType(option.value)}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[styles.chipLabel, selected && styles.chipLabelActive]}
-              >
-                {option.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {userId ? (
-        <View style={styles.userFilter}>
-          <Text style={styles.userFilterText} numberOfLines={2}>
-            Showing activity for {displayValue(filteredUserName)}
-          </Text>
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Clear user filter"
-            style={styles.clearButton}
-            onPress={clearUserFilter}
-          >
-            <Text style={styles.clearLabel}>Clear</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
+    <ScreenContainer admin>
+      <AdminHeader title="Activity" subtitle="Recorded platform activity, newest first." />
 
       {isOffline ? (
         <OnlineRequiredBanner
@@ -295,14 +202,8 @@ export default function AdminActivityScreen() {
       {hasNoEvents ? (
         <EmptyState
           icon="time-outline"
-          title={type === "Admin" ? "No admin actions recorded." : "No activity"}
-          description={
-            type === "Admin"
-              ? "No admin actions have been recorded yet."
-              : "No matching events were recorded. This doesn’t mean users did nothing."
-          }
-          actionLabel={hasFilters ? "Clear Filters" : undefined}
-          onAction={hasFilters ? clearFilters : undefined}
+          title="No activity yet"
+          description="Recorded activity will appear here."
         />
       ) : null}
 
@@ -343,10 +244,11 @@ export default function AdminActivityScreen() {
               activeOpacity={0.75}
               style={styles.item}
             >
-              <Text style={styles.userName}>
-                {displayValue(event.userName)}
-              </Text>
-              <ActivityRow event={event} />
+              <ActivityRow
+                event={event}
+                userLabel={displayValue(event.userName)}
+                userLabelStyle={styles.userName}
+              />
             </TouchableOpacity>
           ))}
         </View>
@@ -365,7 +267,7 @@ export default function AdminActivityScreen() {
           <Text style={styles.footerErrorText}>
             Couldn’t load more activity.
           </Text>
-          <PrimaryButton
+          <PrimaryButton admin
             label="Retry"
             onPress={retryMore}
             style={styles.footerButton}
@@ -388,7 +290,7 @@ export default function AdminActivityScreen() {
       events.length > 0 &&
       nextCursor &&
       loadMoreState === "idle" ? (
-        <PrimaryButton
+        <PrimaryButton admin
           label="Load More"
           onPress={loadMore}
           style={styles.loadMoreButton}
@@ -410,98 +312,8 @@ export default function AdminActivityScreen() {
   );
 }
 
-function getStyles(colors, typography) {
+function getStyles(colors) {
   return StyleSheet.create({
-    headerSpacing: {
-      marginBottom: spacing.sm,
-    },
-    note: {
-      ...typography.body,
-      marginBottom: spacing.md,
-    },
-    demoNotice: {
-      flexDirection: "row",
-      alignItems: "center",
-      alignSelf: "flex-start",
-      gap: spacing.xs,
-      backgroundColor: colors.inputBackground,
-      borderRadius: radius.pill,
-      paddingHorizontal: spacing.smd,
-      paddingVertical: spacing.xs,
-      marginBottom: spacing.md,
-    },
-    demoNoticeText: {
-      color: colors.accent,
-      fontSize: 12,
-      fontWeight: "700",
-    },
-    filterLabel: {
-      color: colors.navySoft,
-      fontSize: 13,
-      fontWeight: "600",
-      marginBottom: spacing.xs,
-    },
-    // Same look as FilterTabs, wrapping options to fit on a phone.
-    chips: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: spacing.sm,
-      marginBottom: spacing.md,
-    },
-    chip: {
-      minHeight: 44,
-      justifyContent: "center",
-      backgroundColor: colors.inputBackground,
-      borderRadius: radius.pill,
-      paddingHorizontal: spacing.md,
-    },
-    chipActive: {
-      backgroundColor: colors.accent,
-      shadowColor: "#101828",
-      shadowOpacity: 0.15,
-      shadowOffset: { width: 0, height: 2 },
-      shadowRadius: 6,
-      elevation: 2,
-    },
-    chipLabel: {
-      fontSize: 14,
-      fontWeight: "600",
-      color: colors.navySoft,
-    },
-    chipLabelActive: {
-      color: "#FFFFFF",
-      fontWeight: "700",
-    },
-    userFilter: {
-      flexDirection: "row",
-      alignItems: "center",
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.cardBorder,
-      borderRadius: radius.md,
-      paddingLeft: spacing.smd,
-      marginBottom: spacing.md,
-      gap: spacing.sm,
-    },
-    userFilterText: {
-      flex: 1,
-      color: colors.navy,
-      fontSize: 14,
-      fontWeight: "600",
-      paddingVertical: spacing.sm,
-    },
-    clearButton: {
-      minHeight: 44,
-      minWidth: 44,
-      alignItems: "center",
-      justifyContent: "center",
-      paddingHorizontal: spacing.smd,
-    },
-    clearLabel: {
-      color: colors.accent,
-      fontSize: 14,
-      fontWeight: "700",
-    },
     loading: {
       minHeight: 120,
       alignItems: "center",
@@ -520,7 +332,7 @@ function getStyles(colors, typography) {
       paddingHorizontal: spacing.md,
     },
     item: {
-      paddingTop: spacing.smd,
+      minWidth: 0,
     },
     userName: {
       color: colors.navy,

@@ -1,20 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import EmptyState from "../ui/EmptyState";
 import AdminHeader from "../admin/AdminHeader";
+import ActivityRow from "../admin/ActivityRow";
 import PrimaryButton from "../ui/PrimaryButton";
 import ScreenContainer from "../ui/ScreenContainer";
 import StatCard from "../ui/StatCard";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
-import { getAdminStats } from "../../services/adminService";
+import { getActivityLogs, getAdminStats } from "../../services/adminService";
 
 
 const STATISTICS = [
@@ -37,15 +40,6 @@ function getErrorState(error) {
   }
 
   return "error";
-}
-
-function formatTimestamp(value) {
-  if (!value) {
-    return "—";
-  }
-
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
 }
 
 function formatMetric(value) {
@@ -100,6 +94,7 @@ function Statistics({ stats, styles }) {
         return (
           <View key={statistic.key} style={styles.statisticCell}>
             <StatCard
+              admin
               label={statistic.label}
               value={formatMetric(stats[statistic.key])}
               subtitle={subtitle}
@@ -111,7 +106,19 @@ function Statistics({ stats, styles }) {
   );
 }
 
-function RecentActivity({ events, styles, colors }) {
+function RecentActivity({ events, loading, styles, colors }) {
+  if (loading) {
+    return (
+      <View
+        style={styles.activityLoading}
+        accessibilityRole="progressbar"
+        accessibilityLabel="Loading recent activity"
+      >
+        <ActivityIndicator color={colors.accent} />
+      </View>
+    );
+  }
+
   if (!Array.isArray(events)) {
     return (
       <EmptyState
@@ -135,30 +142,14 @@ function RecentActivity({ events, styles, colors }) {
   return (
     <View style={styles.activityList}>
       {events.slice(0, 5).map((event) => {
-        const eventStatus =
-          event.status === "failed"
-            ? "Failed"
-            : event.status === "success"
-              ? "Completed"
-              : "—";
         const rowContent = (
           <>
             <View style={styles.activityText}>
-              <Text style={styles.activityUser}>
-                {event.userName || "Unknown user"}
-              </Text>
-              <Text style={styles.activityLabel}>{event.label || "Activity"}</Text>
-              <Text style={styles.activityTime}>
-                {formatTimestamp(event.occurredAt)}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.activityStatus,
-                event.status === "failed" && styles.activityStatusFailed,
-              ]}
-            >
-              <Text style={styles.activityStatusText}>{eventStatus}</Text>
+              <ActivityRow
+                event={event}
+                userLabel={event.userName || "Unknown user"}
+                userLabelStyle={styles.activityUser}
+              />
             </View>
             {event.userId ? (
               <Ionicons
@@ -174,7 +165,7 @@ function RecentActivity({ events, styles, colors }) {
           <TouchableOpacity
             key={event.id}
             accessibilityRole="button"
-            accessibilityLabel={`${event.userName || "User"}: ${event.label || "Activity"}, ${eventStatus}, ${formatTimestamp(event.occurredAt)}`}
+            accessibilityHint="Opens user details"
             style={styles.activityRow}
             onPress={() =>
               router.push({
@@ -197,14 +188,19 @@ function RecentActivity({ events, styles, colors }) {
 
 export default function AdminDashboardScreen() {
   const { colors, typography } = useAppTheme();
-  const styles = getStyles(colors, typography);
+  const { width, fontScale } = useWindowDimensions();
+  const styles = getStyles(colors, typography, width < 360 || fontScale >= 1.3);
   const [stats, setStats] = useState(null);
   const [loadState, setLoadState] = useState("loading");
+  const [events, setEvents] = useState(null);
+  const [activityLoading, setActivityLoading] = useState(true);
   const [retryCount, setRetryCount] = useState(0);
 
   const retry = useCallback(() => {
     setStats(null);
     setLoadState("loading");
+    setEvents(null);
+    setActivityLoading(true);
     setRetryCount((count) => count + 1);
   }, []);
 
@@ -227,19 +223,33 @@ export default function AdminDashboardScreen() {
         }
       });
 
+    // Activity has its own response and must not block the statistics request.
+    // The callable returns the first page in newest-first order.
+    getActivityLogs({ type: "all", pageSize: 5, cursor: null })
+      .then((result) => {
+        if (isCurrentRequest) {
+          setEvents(result.events);
+          setActivityLoading(false);
+        }
+      })
+      .catch((error) => {
+        if (__DEV__) {
+          console.warn("Could not load recent admin activity", error);
+        }
+        if (isCurrentRequest) {
+          setEvents(null);
+          setActivityLoading(false);
+        }
+      });
+
     return () => {
       isCurrentRequest = false;
     };
   }, [retryCount]);
 
   return (
-    <ScreenContainer>
-      <View style={{ marginBottom: spacing.md }}>
-        <AdminHeader
-          title="Admin Dashboard"
-          subtitle="Overview of SpeakSharp"
-        />
-      </View>
+    <ScreenContainer admin>
+      <AdminHeader title="Dashboard" subtitle="Overview of SpeakSharp" />
 
       {loadState === "loading" ? (
         <LoadingStatistics
@@ -269,11 +279,12 @@ export default function AdminDashboardScreen() {
             </TouchableOpacity>
           </View>
           <RecentActivity
-            events={stats.recentActivity}
+            events={events}
+            loading={activityLoading}
             styles={styles}
             colors={colors}
           />
-          <PrimaryButton
+          <PrimaryButton admin
             label="View All Users"
             icon="people-outline"
             onPress={() => router.push("/admin/users")}
@@ -298,7 +309,7 @@ export default function AdminDashboardScreen() {
               Admin information requires an internet connection.
             </Text>
           </View>
-          <PrimaryButton label="Retry" onPress={retry} style={styles.retryButton} />
+          <PrimaryButton admin label="Retry" onPress={retry} style={styles.retryButton} />
         </View>
       ) : null}
 
@@ -335,23 +346,8 @@ export default function AdminDashboardScreen() {
   );
 }
 
-function getStyles(colors, typography) {
+function getStyles(colors, typography, singleColumn) {
   return StyleSheet.create({
-    header: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      justifyContent: "space-between",
-      marginBottom: spacing.md,
-      gap: spacing.sm,
-    },
-    title: {
-      ...typography.heading,
-      fontSize: 22,
-    },
-    subtitle: {
-      ...typography.body,
-      marginTop: spacing.xs,
-    },
     statisticsGrid: {
       flexDirection: "row",
       flexWrap: "wrap",
@@ -359,13 +355,13 @@ function getStyles(colors, typography) {
       marginBottom: spacing.md,
     },
     statisticCell: {
-      width: "50%",
+      width: singleColumn ? "100%" : "50%",
       paddingHorizontal: spacing.xs,
       marginBottom: spacing.sm,
     },
     skeletonCard: {
-      minHeight: 105,
-      alignItems: "center",
+      minHeight: 152,
+      alignItems: "flex-start",
       borderWidth: 1,
       borderRadius: radius.md,
       padding: spacing.md,
@@ -388,6 +384,7 @@ function getStyles(colors, typography) {
     },
     sectionHeader: {
       flexDirection: "row",
+      flexWrap: "wrap",
       alignItems: "center",
       justifyContent: "space-between",
       marginTop: spacing.xs,
@@ -397,9 +394,10 @@ function getStyles(colors, typography) {
     sectionTitle: {
       ...typography.heading,
       fontSize: 18,
+      flexShrink: 1,
     },
     textAction: {
-      minHeight: 40,
+      minHeight: 44,
       flexDirection: "row",
       alignItems: "center",
       gap: spacing.xs,
@@ -417,44 +415,23 @@ function getStyles(colors, typography) {
       borderRadius: radius.md,
       paddingHorizontal: spacing.md,
     },
+    activityLoading: {
+      minHeight: 120,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     activityRow: {
       flexDirection: "row",
       alignItems: "center",
-      paddingVertical: spacing.smd,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: colors.border,
       gap: spacing.sm,
     },
     activityText: {
       flex: 1,
-      gap: spacing.xs,
+      minWidth: 0,
     },
     activityUser: {
       color: colors.navy,
       fontSize: 14,
-      fontWeight: "700",
-    },
-    activityLabel: {
-      color: colors.navySoft,
-      fontSize: 13,
-    },
-    activityTime: {
-      color: colors.textSecondary,
-      fontSize: 12,
-    },
-    activityStatus: {
-      borderWidth: 1,
-      borderColor: colors.cardBorder,
-      borderRadius: radius.pill,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: spacing.xs,
-    },
-    activityStatusFailed: {
-      borderColor: "#D92D20",
-    },
-    activityStatusText: {
-      color: colors.navySoft,
-      fontSize: 11,
       fontWeight: "700",
     },
     usersButton: {

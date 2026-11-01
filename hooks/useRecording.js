@@ -464,5 +464,7 @@ export function useRecording() {
     stopRecording,
     discardRecording,
     markAccepted,
+    protectDuringSave: () => { acceptedRef.current = true; },
+    releaseFailedSave: () => { acceptedRef.current = false; },
   };
 }

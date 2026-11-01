@@ -7,6 +7,16 @@ const RECORDINGS_DIRECTORY = new Directory(
   "SpeakSharp",
   "recordings",
 );
+let mappingWrite = Promise.resolve();
+function changeMappings(change) {
+  const operation = mappingWrite.then(async () => {
+    const mappings = await readMappings();
+    change(mappings);
+    await writeMappings(mappings);
+  });
+  mappingWrite = operation.catch(() => {});
+  return operation;
+}
 
 function requireRecordingId(recordingId) {
   if (
@@ -65,6 +75,20 @@ function recordingFile(recordingId) {
   return new File(RECORDINGS_DIRECTORY, `${recordingId}.m4a`);
 }
 
+export function persistentRecordingUri(recordingId) {
+  return recordingFile(requireRecordingId(recordingId)).uri;
+}
+
+export function hasLocalAudio(uri, expectedSize) {
+  if (!uri) return false;
+  const info = new File(uri).info();
+  return Boolean(info.exists && info.size > 0 && (expectedSize == null || info.size === expectedSize));
+}
+
+export function localAudioSize(uri) {
+  return new File(uri).info().size ?? 0;
+}
+
 function isUriInside(uri, directory) {
   const prefix = directory.uri.endsWith("/")
     ? directory.uri
@@ -83,21 +107,19 @@ export async function persistRecording(sourceUri, recordingId) {
 
     RECORDINGS_DIRECTORY.create({ intermediates: true, idempotent: true });
     const destination = recordingFile(normalizedId);
-    await source.copy(destination, { overwrite: true });
+    if (source.uri !== destination.uri && !hasLocalAudio(destination.uri, sourceInfo.size)) {
+      if (destination.exists) destination.delete();
+      await source.copy(destination);
+    }
 
     const destinationInfo = destination.info();
-    if (!destinationInfo.exists || !destinationInfo.size) {
+    if (!destinationInfo.exists || !destinationInfo.size || destinationInfo.size !== sourceInfo.size) {
       throw new Error("The persisted audio file is missing or empty.");
     }
 
-    try {
-      const mappings = await readMappings();
+    await changeMappings((mappings) => {
       mappings[normalizedId] = destination.uri;
-      await writeMappings(mappings);
-    } catch (error) {
-      if (destination.exists) destination.delete();
-      throw error;
-    }
+    });
 
     return destination.uri;
   } catch (error) {
@@ -136,8 +158,7 @@ export async function deleteLocalRecording(recordingId, { onlyMapped = false } =
   try {
     if (file.exists) file.delete();
     if (Object.hasOwn(mappings, normalizedId)) {
-      delete mappings[normalizedId];
-      await writeMappings(mappings);
+      await changeMappings((current) => { delete current[normalizedId]; });
     }
   } catch (error) {
     throw localStorageError(

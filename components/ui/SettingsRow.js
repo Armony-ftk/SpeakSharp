@@ -10,28 +10,33 @@ export default function SettingsRow({
   onPress,
   value,
   onValueChange,
+  admin = false,
+  disabled = false,
 }) {
   const isSwitch = typeof value === "boolean";
   const { colors } = useAppTheme();
   const styles = getStyles(colors);
 
   const content = (
-    <View style={styles.row}>
+    <View style={[styles.row, admin && styles.adminRow]}>
       <View style={styles.iconWrap}>
         <Ionicons name={icon} size={16} color={colors.navySoft} />
       </View>
-      <View style={styles.textWrap}>
+      <View style={[styles.textWrap, admin && styles.adminTextWrap]}>
         <Text style={styles.label}>{label}</Text>
-        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        {subtitle ? <Text style={[styles.subtitle, admin && styles.adminSubtitle]}>{subtitle}</Text> : null}
       </View>
       {isSwitch ? (
         <Switch
           value={value}
           onValueChange={onValueChange}
+          disabled={disabled}
+          accessibilityLabel={admin ? label : undefined}
+          accessibilityHint={admin ? subtitle : undefined}
           trackColor={{ true: colors.accent, false: colors.border }}
         />
       ) : (
-        <Ionicons name="chevron-forward" size={18} color={colors.placeholder} />
+        disabled ? null : <Ionicons name="chevron-forward" size={18} color={colors.placeholder} />
       )}
     </View>
   );
@@ -41,7 +46,15 @@ export default function SettingsRow({
   }
 
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      disabled={disabled}
+      accessibilityRole={admin ? "button" : undefined}
+      accessibilityLabel={admin ? label : undefined}
+      accessibilityHint={admin ? subtitle : undefined}
+      accessibilityState={admin ? { disabled } : undefined}
+    >
       {content}
     </TouchableOpacity>
   );
@@ -49,6 +62,9 @@ export default function SettingsRow({
 
 function getStyles(colors) {
   return StyleSheet.create({
+    adminRow: { minHeight: 64, paddingVertical: spacing.smd },
+    adminTextWrap: { minWidth: 0, paddingRight: spacing.sm },
+    adminSubtitle: { fontSize: 12, lineHeight: 17, marginTop: spacing.xs },
     row: {
       flexDirection: "row",
       alignItems: "center",

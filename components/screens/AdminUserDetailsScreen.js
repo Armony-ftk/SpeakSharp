@@ -5,9 +5,11 @@ import {
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import AdminHeader from "../admin/AdminHeader";
 import ActivityRow from "../admin/ActivityRow";
 import StatusBadge from "../admin/StatusBadge";
 import ConfirmDialog from "../ui/ConfirmDialog";
@@ -56,21 +58,6 @@ function formatCreatedAt(value) {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
 }
 
-function BackButton({ colors, styles }) {
-  return (
-    <TouchableOpacity
-      accessibilityRole="button"
-      accessibilityLabel="Go back"
-      style={styles.backButton}
-      onPress={() => router.back()}
-      hitSlop={8}
-    >
-      <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
-      <Text style={styles.backLabel}>Back</Text>
-    </TouchableOpacity>
-  );
-}
-
 function LoadingDetails({ colors, typography, styles }) {
   return (
     <View
@@ -103,14 +90,15 @@ function OnlineRequiredBanner({ onRetry, styles, colors }) {
           Admin information requires an internet connection.
         </Text>
       </View>
-      <PrimaryButton label="Retry" onPress={onRetry} style={styles.retryButton} />
+      <PrimaryButton admin label="Retry" onPress={onRetry} style={styles.retryButton} />
     </View>
   );
 }
 
 export default function AdminUserDetailsScreen({ userId }) {
   const { colors, typography } = useAppTheme();
-  const styles = getStyles(colors, typography);
+  const { width, fontScale } = useWindowDimensions();
+  const styles = getStyles(colors, typography, width < 360 || fontScale >= 1.3);
   const [user, setUser] = useState(null);
   const [loadState, setLoadState] = useState("loading");
   const [retryCount, setRetryCount] = useState(0);
@@ -441,18 +429,8 @@ export default function AdminUserDetailsScreen({ userId }) {
     : "They won’t be able to sign in until reactivated.";
 
   return (
-    <ScreenContainer>
-      <View style={styles.header}>
-        <BackButton colors={colors} styles={styles} />
-        <Text style={styles.title}>User Details</Text>
-      </View>
-
-      {__DEV__ ? (
-        <View style={styles.demoNotice} accessibilityRole="text">
-          <Ionicons name="flask-outline" size={16} color={colors.accent} />
-          <Text style={styles.demoNoticeText}>Demo Data</Text>
-        </View>
-      ) : null}
+    <ScreenContainer admin bottomInset>
+      <AdminHeader title="User Details" back />
 
       {loadState === "loading" ? (
         <LoadingDetails
@@ -511,20 +489,20 @@ export default function AdminUserDetailsScreen({ userId }) {
 
           <View style={styles.stats}>
             <View style={styles.statCell}>
-              <StatCard
+              <StatCard admin
                 label="Total Sessions"
                 value={displayValue(user.totalSessions)}
               />
             </View>
             <View style={styles.statCell}>
-              <StatCard
+              <StatCard admin
                 label="Total Recordings"
                 value={displayValue(user.totalRecordings)}
               />
             </View>
           </View>
 
-        <Text style={styles.sectionTitle}>Recent Activity</Text>
+          <Text style={styles.sectionTitle}>Recent Activity</Text>
           {!Array.isArray(user.recentActivity) ? (
             <EmptyState
               icon="time-outline"
@@ -603,7 +581,7 @@ export default function AdminUserDetailsScreen({ userId }) {
         </>
       ) : null}
 
-      <ConfirmDialog
+      <ConfirmDialog admin
         visible={showConfirmation}
         title={confirmationTitle}
         message={confirmationMessage}
@@ -618,47 +596,8 @@ export default function AdminUserDetailsScreen({ userId }) {
   );
 }
 
-function getStyles(colors, typography) {
+function getStyles(colors, typography, singleColumn) {
   return StyleSheet.create({
-    header: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: spacing.md,
-      marginBottom: spacing.md,
-    },
-    backButton: {
-      minWidth: 48,
-      minHeight: 44,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: spacing.xs,
-    },
-    backLabel: {
-      color: colors.navySoft,
-      fontSize: 14,
-      fontWeight: "600",
-    },
-    title: {
-      ...typography.heading,
-      flexShrink: 1,
-      fontSize: 20,
-    },
-    demoNotice: {
-      flexDirection: "row",
-      alignItems: "center",
-      alignSelf: "flex-start",
-      gap: spacing.xs,
-      backgroundColor: colors.inputBackground,
-      borderRadius: radius.pill,
-      paddingHorizontal: spacing.smd,
-      paddingVertical: spacing.xs,
-      marginBottom: spacing.md,
-    },
-    demoNoticeText: {
-      color: colors.accent,
-      fontSize: 12,
-      fontWeight: "700",
-    },
     loading: {
       minHeight: 180,
       alignItems: "center",
@@ -680,12 +619,15 @@ function getStyles(colors, typography) {
     },
     fullName: {
       ...typography.heading,
-      fontSize: 20,
+      fontSize: 22,
+      maxWidth: "100%",
       flexShrink: 1,
     },
     email: {
       ...typography.body,
-      fontSize: 15,
+      fontSize: 14,
+      lineHeight: 20,
+      maxWidth: "100%",
       flexShrink: 1,
     },
     createdAt: {
@@ -699,7 +641,7 @@ function getStyles(colors, typography) {
       marginBottom: spacing.md,
     },
     statCell: {
-      width: "50%",
+      width: singleColumn ? "100%" : "50%",
       paddingHorizontal: spacing.xs,
       marginBottom: spacing.sm,
     },
@@ -750,6 +692,7 @@ function getStyles(colors, typography) {
       color: "#FFFFFF",
       fontSize: 15,
       fontWeight: "700",
+      flexShrink: 1,
       textAlign: "center",
     },
     offlineBanner: {

@@ -14,11 +14,11 @@ import { formatProgressRating, getProgressCards, getProgressMessage } from "../.
 export default function ProgressScreen() {
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
-  const { progress, loading, errorMessage, retry } = useAccountData();
+  const { progress, loading, errorMessage, retry, pendingRecordings = [] } = useAccountData();
   const { overview, eligibleCount, undatedCount } = progress;
   const improvements = getProgressCards(progress);
 
-  if (loading || errorMessage || overview.attempts === 0) {
+  if (loading || (errorMessage && !pendingRecordings.length) || overview.attempts === 0) {
     return (
       <ScreenContainer contentStyle={styles.emptyContent}>
         <AppHeader />
@@ -55,6 +55,7 @@ export default function ProgressScreen() {
       <AppHeader />
       <Text style={styles.title}>Your Progress</Text>
       <Text style={styles.subtitle}>Track your communication journey.</Text>
+      {errorMessage ? <Text style={styles.comparisonNote}>{errorMessage} Showing recordings available on this device.</Text> : null}
 
       <View style={styles.statsGrid}>
         <View style={styles.statsRow}>

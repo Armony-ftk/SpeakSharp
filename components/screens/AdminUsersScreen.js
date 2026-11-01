@@ -4,7 +4,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
@@ -13,6 +12,7 @@ import EmptyState from "../ui/EmptyState";
 import FilterTabs from "../ui/FilterTabs";
 import PrimaryButton from "../ui/PrimaryButton";
 import ScreenContainer from "../ui/ScreenContainer";
+import AdminHeader from "../admin/AdminHeader";
 import UserListItem from "../admin/UserListItem";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
@@ -58,14 +58,14 @@ function OnlineRequiredBanner({ onRetry, styles, colors }) {
           Admin information requires an internet connection.
         </Text>
       </View>
-      <PrimaryButton label="Retry" onPress={onRetry} style={styles.retryButton} />
+      <PrimaryButton admin label="Retry" onPress={onRetry} style={styles.retryButton} />
     </View>
   );
 }
 
 export default function AdminUsersScreen() {
-  const { colors, typography } = useAppTheme();
-  const styles = getStyles(colors, typography);
+  const { colors } = useAppTheme();
+  const styles = getStyles(colors);
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [status, setStatus] = useState("all");
@@ -239,20 +239,11 @@ export default function AdminUsersScreen() {
   const hasNoMatches = loadState === "success" && users.length === 0;
 
   return (
-    <ScreenContainer>
-      <View style={styles.header}>
-        <Text style={styles.title}>Users</Text>
-        {loadState === "success" && total != null ? (
-          <Text style={styles.total}>{total} total</Text>
-        ) : null}
-      </View>
-
-      {__DEV__ ? (
-        <View style={styles.demoNotice} accessibilityRole="text">
-          <Ionicons name="flask-outline" size={16} color={colors.accent} />
-          <Text style={styles.demoNoticeText}>Demo Data</Text>
-        </View>
-      ) : null}
+    <ScreenContainer admin>
+      <AdminHeader
+        title="Users"
+        subtitle={loadState === "success" && total != null ? `${total} total` : undefined}
+      />
 
       <View style={styles.searchWrapper}>
         <Ionicons
@@ -287,7 +278,7 @@ export default function AdminUsersScreen() {
         accessibilityLabel={`Account status filters. ${status === "all" ? "All" : status === "active" ? "Active" : "Suspended"} selected.`}
         style={styles.filterGroup}
       >
-        <FilterTabs
+        <FilterTabs admin
           options={STATUS_OPTIONS}
           value={status}
           onChange={handleStatusChange}
@@ -374,7 +365,7 @@ export default function AdminUsersScreen() {
           <Text style={styles.footerErrorText}>
             Couldn’t load more users.
           </Text>
-          <PrimaryButton
+          <PrimaryButton admin
             label="Retry"
             onPress={retryMore}
             style={styles.footerButton}
@@ -397,7 +388,7 @@ export default function AdminUsersScreen() {
       users.length > 0 &&
       nextCursor &&
       loadMoreState === "idle" ? (
-        <PrimaryButton
+        <PrimaryButton admin
           label="Load More"
           onPress={loadMore}
           style={styles.loadMoreButton}
@@ -407,40 +398,8 @@ export default function AdminUsersScreen() {
   );
 }
 
-function getStyles(colors, typography) {
+function getStyles(colors) {
   return StyleSheet.create({
-    header: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: spacing.sm,
-      marginBottom: spacing.md,
-    },
-    title: {
-      ...typography.heading,
-      fontSize: 22,
-    },
-    total: {
-      ...typography.body,
-      flexShrink: 1,
-      textAlign: "right",
-    },
-    demoNotice: {
-      flexDirection: "row",
-      alignItems: "center",
-      alignSelf: "flex-start",
-      gap: spacing.xs,
-      backgroundColor: colors.inputBackground,
-      borderRadius: radius.pill,
-      paddingHorizontal: spacing.smd,
-      paddingVertical: spacing.xs,
-      marginBottom: spacing.md,
-    },
-    demoNoticeText: {
-      color: colors.accent,
-      fontSize: 12,
-      fontWeight: "700",
-    },
     searchWrapper: {
       minHeight: 48,
       flexDirection: "row",

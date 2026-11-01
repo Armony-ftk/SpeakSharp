@@ -3,7 +3,7 @@ import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
 
 export default function StatusBadge({ status }) {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const normalizedStatus = status?.toLowerCase();
   const label =
     normalizedStatus === "active"
@@ -12,6 +12,7 @@ export default function StatusBadge({ status }) {
         ? "Suspended"
         : "—";
   const isSuspended = normalizedStatus === "suspended";
+  const statusColor = isSuspended ? (isDark ? "#FDA29B" : "#B42318") : colors.navySoft;
 
   return (
     <View
@@ -19,7 +20,7 @@ export default function StatusBadge({ status }) {
         styles.badge,
         {
           backgroundColor: colors.card,
-          borderColor: isSuspended ? "#D92D20" : colors.cardBorder,
+          borderColor: isSuspended ? statusColor : colors.cardBorder,
         },
       ]}
       accessibilityLabel={`Account status: ${label}`}
@@ -27,7 +28,7 @@ export default function StatusBadge({ status }) {
       <Text
         style={[
           styles.label,
-          { color: isSuspended ? "#D92D20" : colors.navySoft },
+          { color: statusColor },
         ]}
       >
         {label}
@@ -38,6 +39,7 @@ export default function StatusBadge({ status }) {
 
 const styles = StyleSheet.create({
   badge: {
+    maxWidth: "100%",
     alignSelf: "flex-start",
     borderWidth: 1,
     borderRadius: radius.pill,

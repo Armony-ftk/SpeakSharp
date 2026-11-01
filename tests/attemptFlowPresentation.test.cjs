@@ -29,6 +29,8 @@ async function fixture(initial, options = {}) {
   const statuses = await import("../constants/recordindStatuses.js");
   const hooks = [], effects = [], calls = [];
   let cursor = 0, current = initial, nextSnapshot, listenerError, tree, time = now;
+  let localEntry = options.localEntry ?? null;
+  let online = options.online ?? true;
   const same = (left, right) => left && right && left.length === right.length && left.every((value, index) => value === right[index]);
   const memo = (create, deps) => {
     const index = cursor++;
@@ -69,6 +71,20 @@ async function fixture(initial, options = {}) {
     "../../utils/recordingFeedback": feedback,
     "./RecordingFeedbackView": "Feedback",
     "../../services/sessionService": { getSessionById: async () => ({ title: "Session" }) },
+    "../../context/AccountDataContext": { useAccountData: () => ({ recordingEntries: options.localRecording
+      ? [{ data: { id: "session" }, recordings: [options.localRecording] }] : [],
+      pendingRecordings: localEntry ? [localEntry] : [], networkOnline: online }) },
+    "../../services/recordingSyncService": { retryQueuedUpload: async (...args) => {
+      calls.push(["upload", args[0], args[1]]);
+      localEntry = { sessionId: "session", recordingId: options.id ?? "recording", syncStatus: "uploading", retryProcessing: args[2] };
+      try {
+        await options.upload?.();
+        localEntry = { ...localEntry, syncStatus: "synced", retryProcessing: false };
+      } catch (error) {
+        localEntry = { ...localEntry, syncStatus: "error", errorMessage: "Upload error" };
+        throw error;
+      }
+    } },
     "../../services/recordingService": {
       getRecording: async () => current,
       subscribeToRecording: (_sid, _rid, next, error) => {
@@ -107,8 +123,11 @@ async function fixture(initial, options = {}) {
   const buttons = () => nodes().filter((node) => node.type === "Button");
   render();
   await settle();
+  await settle();
   return {
     root, calls, render, settle, nodes,
+    queue: (value) => { localEntry = value; render(); },
+    connection: (value) => { online = value; render(); },
     emit: (recording) => { current = recording; nextSnapshot(recording); render(); },
     error: () => { listenerError(); render(); },
     advance: (milliseconds) => { time += milliseconds; render(); },
@@ -255,4 +274,30 @@ test("completed recordings keep the existing feedback view and incomplete-feedba
   f.emit({ ...complete, aiFeedback: null });
   assert.ok(f.nodes().some((node) => node.props.label === "RECONNECT"));
   assert.deepEqual(f.retries(), []);
+});
+
+test("offline local attempts open safely with waiting labels and never an uploading spinner", async () => {
+  const f = await fixture(null, { online: false,
+    localEntry: { sessionId: "session", recordingId: "recording", syncStatus: "queued" },
+    localRecording: { id: "recording", processingStatus: "pending_upload", durationSeconds: 42 } });
+  assert.deepEqual(f.steps()[0], { label: "Waiting for upload/transcription", visual: "ellipse-outline" });
+  assert.deepEqual(f.retries(), []); assert.equal(f.calls.length, 0);
+  f.queue({ sessionId: "session", recordingId: "recording", syncStatus: "uploading" });
+  assert.equal(f.steps()[0].visual, "ellipse-outline");
+  f.connection(true); assert.equal(f.steps()[0].visual, "spinner");
+  f.emit({ processingStatus: "transcribing", uploadedAt: timestamp(now) });
+  assert.equal(f.steps()[0].visual, "checkmark-circle");
+  f.queue(null); assert.equal(f.steps()[0].visual, "checkmark-circle");
+  assert.deepEqual(f.retries(), []);
+});
+
+test("local upload failures and unfinished deletions retain recovery UI without AI feedback", async () => {
+  const f = await fixture(null, {
+    localEntry: { sessionId: "session", recordingId: "recording", syncStatus: "error", errorMessage: "Your audio is saved." },
+    localRecording: { id: "recording", processingStatus: "pending_upload" } });
+  assert.deepEqual(f.retries(), ["RETRY UPLOAD"]);
+  assert.equal(f.steps()[0].visual, "warning-outline");
+  f.queue({ sessionId: "session", recordingId: "recording", syncStatus: "queued", deletionPending: true });
+  assert.ok(f.nodes().some((node) => node.props.children === "Deletion unfinished"));
+  assert.ok(f.nodes().some((node) => node.props.label === "Back to Session"));
 });

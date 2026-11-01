@@ -17,6 +17,7 @@ export default function PrimaryButton({
   style,
   icon,
   pill,
+  admin = false,
 }) {
   const { colors } = useAppTheme();
   const styles = getStyles(colors);
@@ -25,6 +26,7 @@ export default function PrimaryButton({
     <TouchableOpacity
       style={[
         styles.button,
+        admin && styles.adminButton,
         pill && styles.buttonPill,
         disabled && styles.buttonDisabled,
         style,
@@ -32,12 +34,14 @@ export default function PrimaryButton({
       onPress={onPress}
       activeOpacity={0.85}
       disabled={loading || disabled}
+      accessibilityRole={admin ? "button" : undefined}
+      accessibilityState={admin ? { disabled: Boolean(loading || disabled), busy: Boolean(loading) } : undefined}
     >
       {loading ? (
         <>
           <ActivityIndicator color="#FFFFFF" size="small" />
           {loadingLabel ? (
-            <Text style={[styles.label, styles.loadingLabel]}>
+            <Text style={[styles.label, styles.loadingLabel, admin && styles.adminLabel]}>
               {loadingLabel}
             </Text>
           ) : null}
@@ -52,7 +56,7 @@ export default function PrimaryButton({
               style={styles.icon}
             />
           ) : null}
-          <Text style={styles.label}>{label}</Text>
+          <Text style={[styles.label, admin && styles.adminLabel]}>{label}</Text>
         </>
       )}
     </TouchableOpacity>
@@ -61,6 +65,8 @@ export default function PrimaryButton({
 
 function getStyles(colors) {
   return StyleSheet.create({
+    adminButton: { minHeight: 48, paddingHorizontal: spacing.md, shadowOpacity: 0, elevation: 0 },
+    adminLabel: { flexShrink: 1, textAlign: "center", letterSpacing: 0 },
     button: {
       flexDirection: "row",
       backgroundColor: colors.accent,

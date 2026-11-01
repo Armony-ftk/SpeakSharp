@@ -71,17 +71,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     flexShrink: 1,
+    lineHeight: 22,
   },
   email: {
     fontSize: 14,
     flexShrink: 1,
+    lineHeight: 20,
   },
   meta: {
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
     gap: spacing.sm,
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
   },
   sessions: {
     fontSize: 12,
