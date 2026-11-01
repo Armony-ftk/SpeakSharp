@@ -96,9 +96,13 @@ function isUriInside(uri, directory) {
   return typeof uri === "string" && uri.startsWith(prefix);
 }
 
-export async function persistRecording(sourceUri, recordingId) {
+export async function persistRecording(sourceUri, recordingId, userId) {
   const normalizedId = requireRecordingId(recordingId);
   try {
+    if (userId) {
+      const owner = (await readMappings()).__owners?.[normalizedId];
+      if (owner && owner !== userId) throw new Error("The local recording belongs to another account.");
+    }
     const source = new File(sourceUri);
     const sourceInfo = source.info();
     if (!sourceInfo.exists || !sourceInfo.size) {
@@ -119,6 +123,7 @@ export async function persistRecording(sourceUri, recordingId) {
 
     await changeMappings((mappings) => {
       mappings[normalizedId] = destination.uri;
+      if (userId) (mappings.__owners ??= {})[normalizedId] = userId;
     });
 
     return destination.uri;
@@ -140,9 +145,12 @@ export async function getLocalRecordingUri(recordingId) {
   return new File(uri).exists ? uri : null;
 }
 
-export async function deleteLocalRecording(recordingId, { onlyMapped = false } = {}) {
+export async function deleteLocalRecording(recordingId, { onlyMapped = false, expectedOwner } = {}) {
   const normalizedId = requireRecordingId(recordingId);
   const mappings = await readMappings();
+  if (expectedOwner && mappings.__owners?.[normalizedId] && mappings.__owners[normalizedId] !== expectedOwner) {
+    throw new Error("The local recording belongs to another account.");
+  }
   const mappedUri = mappings[normalizedId];
   if (onlyMapped) {
     if (!mappedUri) return;
@@ -158,7 +166,7 @@ export async function deleteLocalRecording(recordingId, { onlyMapped = false } =
   try {
     if (file.exists) file.delete();
     if (Object.hasOwn(mappings, normalizedId)) {
-      await changeMappings((current) => { delete current[normalizedId]; });
+      await changeMappings((current) => { delete current[normalizedId]; if (current.__owners) delete current.__owners[normalizedId]; });
     }
   } catch (error) {
     throw localStorageError(
@@ -180,5 +188,22 @@ export async function deleteTemporaryAudio(uri) {
       "Could not remove the temporary recording.",
       error,
     );
+  }
+}
+
+export async function claimLocalRecordingOwnership(uid, recordingIds) {
+  await changeMappings((mappings) => {
+    for (const id of recordingIds) {
+      requireRecordingId(id);
+      if (mappings[id] && !mappings.__owners?.[id]) (mappings.__owners ??= {})[id] = uid;
+    }
+  });
+}
+
+export async function deleteAccountLocalAudio(uid) {
+  await mappingWrite;
+  const mappings = await readMappings();
+  for (const [id, owner] of Object.entries(mappings.__owners ?? {})) {
+    if (owner === uid) await deleteLocalRecording(id, { expectedOwner: uid });
   }
 }

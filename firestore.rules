@@ -7,7 +7,8 @@ service cloud.firestore {
     }
 
     function activeProfile(uid) {
-      return exists(/databases/$(database)/documents/users/$(uid))
+      return !exists(/databases/$(database)/documents/accountDeletions/$(uid))
+        && exists(/databases/$(database)/documents/users/$(uid))
         && get(/databases/$(database)/documents/users/$(uid))
           .data.get('disabled', false) != true;
     }
@@ -125,10 +126,12 @@ service cloud.firestore {
       allow read: if isOwner(uid)
         && resource.data.get('disabled', false) != true;
       allow create: if isOwner(uid)
+        && !exists(/databases/$(database)/documents/accountDeletions/$(uid))
         && validProfile(request.resource.data)
         && !request.resource.data.keys().hasAny(['disabled'])
         && request.resource.data.createdAt == request.time;
       allow update: if isOwner(uid)
+        && activeProfile(uid)
         && resource.data.get('disabled', false) != true
         && validProfile(request.resource.data)
         && request.resource.data.createdAt == resource.data.createdAt

@@ -415,22 +415,27 @@ function createSessionCreatedHandler({
     const eventId = `session_created_${userId}_${sessionId}`;
 
     // Store metadata only. Do not copy session content into the log.
-    await db
-      .collection(ACTIVITY_COLLECTION)
-      .doc(eventId)
-      .set({
-        id: eventId,
-        userId,
-        userName:
-          typeof profile.fullName === "string"
-            ? profile.fullName
-            : null,
-        type: "session_created",
-        label: "Created a practice session",
-        status: "success",
-        occurredAt: getOccurredAt(event),
-        source: "trusted_function",
-      });
+    try {
+      await db
+        .collection(ACTIVITY_COLLECTION)
+        .doc(eventId)
+        .create({
+          id: eventId,
+          userId,
+          userName:
+            typeof profile.fullName === "string"
+              ? profile.fullName
+              : null,
+          type: "session_created",
+          label: "Created a practice session",
+          status: "success",
+          occurredAt: getOccurredAt(event),
+          source: "trusted_function",
+        });
+    } catch (error) {
+      // Redelivery after account deletion must never overwrite the stored name.
+      if (error?.code !== 6 && error?.code !== "already-exists") throw error;
+    }
   };
 }
 

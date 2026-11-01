@@ -97,6 +97,20 @@ function fixture(overrides = {}) {
     retry: (request = { auth: { uid: "owner" }, data: { sessionId: "session", recordingId: "attempt" } }) => createAnalysisRetry(dependencies)(request) };
 }
 
+test("account checkpoint blocks AI claims, in-flight completion/failure and explicit retry before session cleanup", async () => {
+  for (const stage of ["claim", "completion", "failure"]) {
+    const f = fixture();
+    const guard = () => f.documents.set("accountDeletions/owner", { phase: "pending" });
+    if (stage === "claim") guard();
+    else f.state.duringGeneration = () => { guard(); if (stage === "failure") throw new Error("Provider error"); };
+    await f.run();
+    assert.equal(f.data().aiFeedback, undefined); assert.equal(f.data().processingError, undefined);
+    assert.equal(f.session().ratingSum, 0);
+    if (stage === "claim") assert.equal(f.state.calls, 0);
+    await assert.rejects(f.retry(), { code: "not-found" });
+  }
+});
+
 test("strict schema and rating accept zeros and exclude diagnostic structure scores", () => {
   assert.equal(calculateOverallRating(response), 7.7);
   assert.equal(parseFeedback({ text: JSON.stringify(response) }).overallRating, 7.7);

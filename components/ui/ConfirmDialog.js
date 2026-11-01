@@ -16,6 +16,7 @@ export default function ConfirmDialog({
   onCancel,
   onConfirm,
   admin = false,
+  children,
 }) {
   const { colors, typography, isDark } = useAppTheme();
   const styles = getStyles(colors, typography, isDark);
@@ -54,6 +55,7 @@ export default function ConfirmDialog({
             </View>
           ) : null}
 
+          {children}
           <View style={[styles.actions, admin && styles.adminActions]}>
             <TouchableOpacity
               style={[styles.cancelButton, admin && styles.adminButton]}

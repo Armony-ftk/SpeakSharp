@@ -470,7 +470,8 @@ test("the session trigger reads the profile and writes the activity path", async
             activityWrites.push([name, eventId]);
 
             return {
-              set: async (data) => {
+              create: async (data) => {
+                if (storedEvents.has(eventId)) throw Object.assign(new Error("exists"), { code: 6 });
                 storedEvents.set(eventId, data);
               },
             };
@@ -551,7 +552,7 @@ test("the session trigger handles a missing profile", async () => {
       if (name === "adminActivityLogs") {
         return {
           doc: () => ({
-            set: async (data) => {
+            create: async (data) => {
               writtenEvent = data;
             },
           }),

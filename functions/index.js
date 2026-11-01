@@ -7,6 +7,7 @@ const { transcribeRecording } = require("./transcription");
 const { analyseRecording, retryRecordingAnalysis } = require("./analysis");
 
 exports.deleteSession = deleteSession;
+exports.deleteAccount = require("./deleteAccount").deleteAccount;
 exports.deleteRecording = require("./deleteRecording").deleteRecording;
 exports.transcribeRecording = transcribeRecording;
 exports.analyseRecording = analyseRecording;

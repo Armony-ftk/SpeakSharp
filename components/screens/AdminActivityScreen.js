@@ -246,7 +246,7 @@ export default function AdminActivityScreen() {
             >
               <ActivityRow
                 event={event}
-                userLabel={displayValue(event.userName)}
+                userLabel={event.userName || "Deleted user"}
                 userLabelStyle={styles.userName}
               />
             </TouchableOpacity>

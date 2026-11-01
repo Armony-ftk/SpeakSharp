@@ -32,6 +32,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "test:offline": "node --test tests/offlineRecordings.test.cjs tests/attemptFlowPresentation.test.cjs",
+    "test:account-deletion": "node --test functions/accountDeletion.test.js tests/offlineRecordings.test.cjs tests/attemptFlowPresentation.test.cjs",
+    "test:account-deletion:emulator": "firebase emulators:exec --project demo-speaksharp --config firebase.test.json --only auth,firestore,storage \"node --test functions/test/accountDeletion.emulator.test.js\"",
     "test:rules": "firebase emulators:exec --project demo-speaksharp --config firebase.test.json --only firestore,storage \"node --test tests/firestore.rules.test.js functions/test/rules.test.js functions/adminAccountStatusOperations.emulator.test.js\"",
     "test:components": "jest --config jest.component.config.js components/screens/AdminUserDetailsScreen.test.js",
     "test:admin-demo": "firebase emulators:exec --project demo-speaksharp --config firebase.test.json --only auth,firestore \"node --test functions/test/adminDemo.emulator.test.js\""

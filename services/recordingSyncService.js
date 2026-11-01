@@ -3,14 +3,15 @@ import { getMetadata, ref } from "firebase/storage";
 import { auth, db, storage } from "../config/firebase";
 import { recordingAudioPath } from "../constants/recording";
 import { hasLocalAudio, getLocalRecordingUri } from "../storage/audioStorage";
-import { getQueuedRecordings, repairQueuedAudio, restoreRecordingQueue, saveQueuedRecording, updateQueuedRecording } from "../storage/recordingQueue";
+import { getQueuedRecordings, repairQueuedAudio, restoreRecordingQueue as restoreQueue, saveQueuedRecording, updateQueuedRecording } from "../storage/recordingQueue";
 import { uploadRecordingAudio } from "./audioUploadService";
 import { createRecordingSyncWorker } from "../utils/recordingSyncWorker";
+import { accountDeletionBlocked, restoreAccountDeletions } from "../storage/accountDeletionState";
 
 let activeUid = null;
 let connected = false;
 const ensureOwner = (entry) => {
-  if (auth.currentUser?.uid !== entry.userId || activeUid !== entry.userId) {
+  if (accountDeletionBlocked(entry.userId) || auth.currentUser?.uid !== entry.userId || activeUid !== entry.userId) {
     throw Object.assign(new Error("Sign in as the recording owner to synchronize."), { code: "auth/account-changed" });
   }
 };
@@ -63,7 +64,7 @@ const remote = {
 };
 
 export const recordingSync = createRecordingSyncWorker({
-  owner: () => activeUid === auth.currentUser?.uid ? activeUid : null,
+  owner: () => !accountDeletionBlocked(activeUid) && activeUid === auth.currentUser?.uid ? activeUid : null,
   online: () => connected,
   remote,
   queue: { list: getQueuedRecordings,
@@ -104,7 +105,10 @@ export async function retryQueuedUpload(sessionId, recordingId, retryProcessing 
   await recordingSync.wake();
 }
 
-export { restoreRecordingQueue };
+export async function restoreRecordingQueue(uid) {
+  await restoreAccountDeletions();
+  if (!accountDeletionBlocked(uid)) await restoreQueue(uid);
+}
 
 export async function pauseQueuedUploads(sessionId, recordingId) {
   const uid = auth.currentUser?.uid;

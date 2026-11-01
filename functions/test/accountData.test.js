@@ -99,7 +99,7 @@ async function fixture() {
     "../config/firebase": { db: {} }, "./useAuth": authHook, "../utils/progressStats": stats });
   let pendingRecordings = [];
   const queue = load("storage/recordingQueue.js", {
-    "@react-native-async-storage/async-storage": {}, "./audioStorage": {}, "../constants/recording": {},
+    "@react-native-async-storage/async-storage": {}, "./audioStorage": {}, "./accountDeletionState": {}, "../constants/recording": {},
   });
   const account = load("context/AccountDataContext.js", { react: runtime.react, "firebase/firestore": firestore,
     "../config/firebase": { db: {} }, "../hooks/useAuth": authHook, "../hooks/useProgress": progress,
@@ -394,7 +394,7 @@ test("root layout shares one keyed provider across tabs and edit profile, inside
   const layout = read("app/_layout.js");
   assert.equal((layout.match(/<AccountDataProvider\b/g) || []).length, 1);
   assert.match(layout, /<AccountDataProvider key=\{hasAppAccess \? currentUser.uid : 'signed-out'\} enabled=\{hasAppAccess\}>/);
-  assert.match(layout, /<AuthProvider>\s*<RootLayoutNav/);
+  assert.match(layout, /<AuthProvider>\s*<AccountDeletionGate><RootLayoutNav/);
   assert.match(layout, /<AccountDataProvider[\s\S]*name="\(tabs\)"[\s\S]*name="edit-profile"[\s\S]*<\/AccountDataProvider>/);
   for (const screen of ["Home", "Profile", "Progress", "EditProfile"]) {
     const source = read(`components/screens/${screen}Screen.js`);

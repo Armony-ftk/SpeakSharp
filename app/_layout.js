@@ -8,6 +8,7 @@ import { ThemeProvider, useAppTheme } from '../constants/ThemeContext';
 import { AuthProvider } from '../context/AuthContext';
 import { AccountDataProvider } from '../context/AccountDataContext';
 import { useAuth } from '../hooks/useAuth';
+import AccountDeletionGate from '../components/AccountDeletionGate';
 
 function RootLayoutNav() {
   const { colors, isDark } = useAppTheme();
@@ -76,7 +77,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ThemeProvider>
         <AuthProvider>
-          <RootLayoutNav />
+          <AccountDeletionGate><RootLayoutNav /></AccountDeletionGate>
         </AuthProvider>
       </ThemeProvider>
     </SafeAreaProvider>

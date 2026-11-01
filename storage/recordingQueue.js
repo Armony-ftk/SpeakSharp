@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { hasLocalAudio, localAudioSize, persistRecording, persistentRecordingUri } from "./audioStorage";
+import { hasLocalAudio, localAudioSize, persistRecording, persistentRecordingUri, deleteLocalRecording, deleteTemporaryAudio } from "./audioStorage";
+import { accountDeletionStarted } from "./accountDeletionState";
 import { MAX_RECORDING_SECONDS } from "../constants/recording";
 
 const PREFIX = "@speaksharp/recording-queue/v1/";
@@ -67,7 +68,6 @@ export async function saveQueuedRecording({ userId, sessionId, recordingId, sour
   return locked(userId, recordingId, async () => {
     const storageKey = key(userId, recordingId);
     const existing = entries.get(storageKey) ?? JSON.parse(await AsyncStorage.getItem(storageKey) || "null");
-    if (existing && existing.syncStatus !== "saving") return existing;
     // The journal precedes the copy. A restart can finish the copy or re-index the
     // deterministic document file if the process stopped between these two writes.
     const journal = existing ?? {
@@ -76,9 +76,17 @@ export async function saveQueuedRecording({ userId, sessionId, recordingId, sour
       session: { id: sessionId, title: session?.title ?? "Practice session",
         status: session?.status ?? "active", targetDurationSeconds: session?.targetDurationSeconds ?? null },
     };
+    if (accountDeletionStarted(userId)) {
+      // A save already dispatched by an unmounting recorder must leave a cleanup
+      // reference. Retain its source until cloud deletion is confirmed; never copy
+      // or synchronize it while deletion is pending.
+      if (!existing) await write({ ...journal, deletionPending: true });
+      throw fail("recording/account-deleting", "Account deletion is pending. Resume deletion before saving recordings.");
+    }
+    if (existing && existing.syncStatus !== "saving") return existing;
     await write(journal);
     const source = hasLocalAudio(journal.localUri, journal.byteLength) ? journal.localUri : journal.sourceUri;
-    await persistRecording(source, recordingId);
+    await persistRecording(source, recordingId, userId);
     const { sourceUri: _source, ...saved } = journal;
     return write({ ...saved, syncStatus: "queued", failures: 0, nextRetryAt: 0 });
   });
@@ -101,7 +109,7 @@ export async function restoreRecordingQueue(uid) {
       entries.set(storageKey, entry);
       if (entry.syncStatus === "saving") {
         try {
-          await persistRecording(hasLocalAudio(entry.localUri, entry.byteLength) ? entry.localUri : entry.sourceUri, id);
+          await persistRecording(hasLocalAudio(entry.localUri, entry.byteLength) ? entry.localUri : entry.sourceUri, id, uid);
           const { sourceUri: _source, ...saved } = entry;
           await write({ ...saved, syncStatus: "queued", failures: 0, nextRetryAt: 0 });
         } catch {
@@ -122,7 +130,27 @@ export async function restoreRecordingQueue(uid) {
 export async function repairQueuedAudio(entry) {
   const source = hasLocalAudio(entry.localUri, entry.byteLength) ? entry.localUri
     : hasLocalAudio(entry.sourceUri, entry.byteLength) ? entry.sourceUri : null;
-  if (source) await persistRecording(source, entry.recordingId);
+  if (source) await persistRecording(source, entry.recordingId, entry.userId);
+}
+
+export async function settleAccountRecordingSaves(uid) {
+  const prefix = `${PREFIX}${encodeURIComponent(uid)}/`;
+  await Promise.all([...operations].filter(([storageKey]) => storageKey.startsWith(prefix)).map(([, task]) => task.catch(() => {})));
+}
+
+export async function clearAccountRecordingQueue(uid) {
+  await settleAccountRecordingSaves(uid);
+  const prefix = `${PREFIX}${encodeURIComponent(uid)}/`;
+  for (const storageKey of (await AsyncStorage.getAllKeys()).filter((value) => value.startsWith(prefix))) {
+    const id = storageKey.slice(prefix.length);
+    validateId(id);
+    const raw = await AsyncStorage.getItem(storageKey);
+    const entry = raw ? JSON.parse(raw) : null;
+    if (entry && (entry.userId !== uid || entry.recordingId !== id)) throw new Error("Local recording ownership could not be verified.");
+    await deleteLocalRecording(id, { expectedOwner: uid });
+    if (entry?.sourceUri) await deleteTemporaryAudio(entry.sourceUri);
+    await removeQueuedRecording(uid, id);
+  }
 }
 
 export function localRecording(entry) {

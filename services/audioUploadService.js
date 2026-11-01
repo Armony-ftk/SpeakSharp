@@ -4,6 +4,7 @@ import { auth, storage } from "../config/firebase";
 import { getLocalRecordingUri } from "../storage/audioStorage";
 import { prepareRecordingUpload } from "./recordingService";
 import { recordingAudioPath } from "../constants/recording";
+import { accountDeletionBlocked } from "../storage/accountDeletionState";
 
 function requireCurrentUid() {
   const uid = auth.currentUser?.uid;
@@ -65,7 +66,7 @@ function readNativeFileBlob(localUri) {
 
 export async function uploadRecordingAudio(sessionId, recordingId, expectedUid = requireCurrentUid()) {
   const checkOwner = () => {
-    if (requireCurrentUid() !== expectedUid) {
+    if (accountDeletionBlocked(expectedUid) || requireCurrentUid() !== expectedUid) {
       throw Object.assign(new Error("The authenticated account changed."), { code: "auth/account-changed" });
     }
   };

@@ -85,6 +85,21 @@ function fixture(overrides = {}) {
     run: (input = event) => createTranscriptionProcessor(dependencies)(input) };
 }
 
+test("account deletion checkpoint blocks claims and in-flight transcript/metrics/failure writes before sessions are marked", async () => {
+  for (const stage of ["claim", "transcription", "metrics"]) {
+    const f = fixture();
+    const guard = () => f.documents.set("accountDeletions/owner", { phase: "pending" });
+    if (stage === "claim") guard();
+    if (stage === "transcription") f.state.duringTranscription = guard;
+    if (stage === "metrics") f.state.afterTranscriptSaved = guard;
+    await f.run();
+    assert.equal(f.data().metrics, undefined);
+    assert.equal(f.data().processingError, undefined);
+    if (stage === "claim") assert.equal(f.state.calls, 0);
+    if (stage === "transcription") assert.equal(f.data().transcript, undefined);
+  }
+});
+
 test("late finalization removes only the event generation and cleanup failure requests redelivery", async () => {
   for (const removed of [false, true]) {
     const f = fixture({ deleting: true });

@@ -45,18 +45,19 @@ function fixture(disk = { metadata: new Map(), files: new Map() }) {
   }
   const audio = load("storage/audioStorage.js", {
     "@react-native-async-storage/async-storage": { default: storage, __esModule: true },
-    "expo-file-system": { File, Directory, Paths: { document: "file:///documents", cache: "file:///cache" } },
+    "expo-file-system": { File, Directory, Paths: { document: { uri: "file:///documents" }, cache: { uri: "file:///cache" } } },
   });
+  const deletion = load("storage/accountDeletionState.js", { "@react-native-async-storage/async-storage": { default: storage, __esModule: true } });
   const queue = load("storage/recordingQueue.js", {
     "@react-native-async-storage/async-storage": { default: storage, __esModule: true },
-    "./audioStorage": audio, "../constants/recording": { MAX_RECORDING_SECONDS: 900 },
+    "./audioStorage": audio, "./accountDeletionState": deletion, "../constants/recording": { MAX_RECORDING_SECONDS: 900 },
   });
   const source = (id) => { const uri = `file:///cache/${id}.m4a`; disk.files.set(uri, "original-audio"); return uri; };
   const save = (id = "r1", uid = "alice", sessionId = "session") => queue.saveQueuedRecording({
     userId: uid, sessionId, recordingId: id, sourceUri: source(id), durationSeconds: 42,
     session: { title: "My presentation", status: "active", targetDurationSeconds: 60 },
   });
-  return { disk, queue, audio, save, source, storage, writes,
+  return { disk, queue, audio, deletion, save, source, storage, writes,
     failWrite: (predicate) => { failWrite = predicate; }, failCopy: (value) => { failCopy = value; } };
 }
 
@@ -489,6 +490,7 @@ function serviceFixture(f) {
     } },
     "../config/firebase": { auth, db: {}, storage: {} }, "../constants/recording": constants,
     "../storage/audioStorage": f.audio, "../storage/recordingQueue": f.queue,
+    "../storage/accountDeletionState": f.deletion,
     "./audioUploadService": { uploadRecordingAudio: async (...args) => {
       calls.push(args); objects.set(`recordings/${args[2]}/${args[0]}/${args[1]}.m4a`, { generation: "1" });
     } }, "../utils/recordingSyncWorker": worker,
@@ -497,6 +499,169 @@ function serviceFixture(f) {
   service.setRecordingSyncConnection("alice", true);
   return { service, documents, objects, writes, calls, auth, deny: () => { denied = true; } };
 }
+
+function accountDeletionFixture(f) {
+  const calls = [];
+  const auth = { currentUser: { uid: "alice", email: "alice@example.test", getIdToken: async (force) => { calls.push(["token", force]); } } };
+  const state = { wrongPassword: false, network: true, serverFailure: false, confirmed: false, gate: null };
+  const module = load("services/accountDeletionService.js", {
+    "firebase/auth": {
+      EmailAuthProvider: { credential: (email, password) => ({ email, password }) },
+      reauthenticateWithCredential: async (_, credential) => { calls.push(["reauth", credential]); await state.authGate; if (state.wrongPassword) throw error("auth/invalid-credential"); },
+      signOut: async () => { calls.push(["signOut"]); auth.currentUser = null; },
+    },
+    "firebase/firestore": { collection: () => ({}), getDocsFromServer: async () => ({ docs: [] }) },
+    "firebase/functions": { httpsCallable: (_, name) => async (data) => {
+      assert.equal(name, "deleteAccount"); calls.push(["callable", data]);
+      if (data.confirmOnly) return { data: { success: state.confirmed } };
+      await state.gate;
+      if (state.serverFailure) throw error("functions/deadline-exceeded");
+      state.confirmed = true;
+      return { data: { success: true } };
+    } },
+    "expo-crypto": { getRandomBytesAsync: async () => new Uint8Array(32).fill(42) },
+    "@react-native-community/netinfo": { default: { fetch: async () => ({ isConnected: state.network }) }, __esModule: true },
+    "../config/firebase": { auth, db: {}, functions: {} },
+    "./recordingSyncService": { recordingSync: { idle: async () => { calls.push(["idle"]); await state.uploadGate; }, wake: async () => { calls.push(["wake"]); } } },
+    "../storage/recordingQueue": f.queue, "../storage/audioStorage": f.audio,
+    "../storage/accountDeletionState": f.deletion,
+  });
+  return { module, auth, calls, state };
+}
+
+test("account deletion reauthenticates, forces token refresh and calls only deleteAccount; duplicate taps share one request", async () => {
+  const f = fixture(); await f.save(); await f.save("bob-recording", "bob");
+  const otherAudio = await f.audio.getLocalRecordingUri("bob-recording");
+  const d = accountDeletionFixture(f), gate = deferred(); d.state.gate = gate.promise;
+  const first = d.module.deleteOwnAccount("private-password");
+  const second = d.module.deleteOwnAccount("private-password"); assert.equal(first, second);
+  await new Promise(setImmediate);
+  assert.ok(f.deletion.accountDeletionBlocked("alice"));
+  assert.ok(await f.audio.getLocalRecordingUri("r1"));
+  gate.resolve(); await first;
+  assert.equal(d.calls.filter(([name]) => name === "reauth").length, 1);
+  assert.deepEqual(plain(d.calls.find(([name]) => name === "token")), ["token", true]);
+  const sent = d.calls.find(([name]) => name === "callable")[1];
+  assert.deepEqual(Object.keys(sent), ["receipt"]); assert.equal(sent.receipt.length, 64);
+  assert.ok(!JSON.stringify(sent).includes("password"));
+  assert.equal(f.queue.getQueuedRecordings("alice").length, 0);
+  assert.equal(await f.audio.getLocalRecordingUri("r1"), null);
+  assert.equal(await f.audio.getLocalRecordingUri("bob-recording"), otherAudio);
+  assert.equal(f.queue.getQueuedRecordings("bob").length, 1);
+  assert.equal(d.auth.currentUser, null); assert.deepEqual(plain(f.deletion.getAccountDeletions()), {});
+  assert.ok(![...f.disk.metadata.values()].join(" ").includes("private-password"));
+});
+
+test("wrong password and no internet leave recordings and queue intact without starting deletion", async () => {
+  for (const mode of ["wrongPassword", "offline"]) {
+    const f = fixture(); await f.save(); const d = accountDeletionFixture(f);
+    if (mode === "wrongPassword") d.state.wrongPassword = true; else d.state.network = false;
+    await assert.rejects(d.module.deleteOwnAccount("password"));
+    assert.equal(d.calls.some(([name]) => name === "callable"), false);
+    assert.equal(f.deletion.accountDeletionBlocked("alice"), false);
+    assert.ok(await f.audio.getLocalRecordingUri("r1")); assert.equal(f.queue.getQueuedRecordings("alice").length, 1);
+  }
+});
+
+test("upload scheduling pauses during password verification and resumes safely after a wrong password", async () => {
+  const f = fixture(); await f.save(); const d = accountDeletionFixture(f), password = deferred();
+  d.state.authGate = password.promise; d.state.wrongPassword = true;
+  const deleting = d.module.deleteOwnAccount("wrong"); await new Promise(setImmediate);
+  assert.equal(f.deletion.accountDeletionBlocked("alice"), true);
+  assert.equal(f.deletion.accountDeletionStarted("alice"), false);
+  const sync = serviceFixture(f); await sync.service.recordingSync.wake(); assert.equal(sync.calls.length, 0);
+  password.resolve(); await assert.rejects(deleting, { code: "auth/invalid-credential" });
+  assert.equal(f.deletion.accountDeletionBlocked("alice"), false);
+  await sync.service.recordingSync.wake(); assert.equal(sync.calls.length, 1);
+});
+
+test("ambiguous deletion retains audio and persistent guard; restart cannot upload; completion receipt recovers without Auth", async () => {
+  const f = fixture(); await f.save(); const d = accountDeletionFixture(f); d.state.serverFailure = true;
+  await assert.rejects(d.module.deleteOwnAccount("password"));
+  assert.equal(f.deletion.getAccountDeletions().alice.phase, "submitted");
+  assert.ok(await f.audio.getLocalRecordingUri("r1"));
+  const restarted = fixture(f.disk); const s = serviceFixture(restarted);
+  await s.service.restoreRecordingQueue("alice"); await s.service.recordingSync.wake();
+  assert.equal(s.calls.length, 0);
+  await assert.rejects(restarted.save("new-after-delete"), { code: "recording/account-deleting" });
+  const resumed = accountDeletionFixture(restarted); resumed.auth.currentUser = null; resumed.state.confirmed = true;
+  await resumed.module.confirmAccountDeletion("alice");
+  assert.equal(await restarted.audio.getLocalRecordingUri("r1"), null);
+  assert.equal(restarted.disk.metadata.has("@speaksharp/recording-queue/v1/alice/r1"), false);
+  assert.equal(resumed.calls.some(([name]) => name === "reauth"), false);
+});
+
+test("account deletion waits for active upload and local save before calling server; queued jobs cannot start", async () => {
+  const f = fixture(); await f.save(); const d = accountDeletionFixture(f), upload = deferred();
+  d.state.uploadGate = upload.promise;
+  const deletion = d.module.deleteOwnAccount("password"); await new Promise(setImmediate);
+  assert.ok(f.deletion.accountDeletionBlocked("alice"));
+  assert.equal(d.calls.some(([name]) => name === "callable"), false);
+  const sync = serviceFixture(f); await sync.service.recordingSync.wake(); assert.equal(sync.calls.length, 0);
+  upload.resolve(); await deletion; assert.equal(d.calls.filter(([name]) => name === "callable").length, 1);
+});
+
+test("account deletion settles an already accepted save before cleaning its journal, audio and mapping", async () => {
+  const f = fixture(); const copy = deferred(), original = f.audio.persistRecording;
+  f.audio.persistRecording = async (...args) => { await copy.promise; return original(...args); };
+  const saving = f.save(); await new Promise(setImmediate);
+  const d = accountDeletionFixture(f), deletion = d.module.deleteOwnAccount("password");
+  await new Promise(setImmediate);
+  assert.equal(d.calls.some(([name]) => name === "callable"), false);
+  copy.resolve(); await saving; await deletion;
+  assert.equal(await f.audio.getLocalRecordingUri("r1"), null);
+  assert.equal(f.disk.metadata.has("@speaksharp/recording-queue/v1/alice/r1"), false);
+});
+
+test("an uploader still preparing native bytes cannot start its transfer after account deletion begins", async () => {
+  const f = fixture(); await f.save();
+  const bytes = deferred(); let transfers = 0;
+  const uploader = load("services/audioUploadService.js", {
+    "expo-file-system": { File: class { info() { return { exists: true, size: 10 }; } bytes() { return bytes.promise; } } },
+    "firebase/storage": { ref: () => ({}), uploadBytes: async () => { transfers++; } },
+    "../config/firebase": { auth: { currentUser: { uid: "alice" } }, storage: {} },
+    "../storage/audioStorage": f.audio, "../storage/accountDeletionState": f.deletion,
+    "./recordingService": { prepareRecordingUpload: async () => "recordings/alice/session/r1.m4a" },
+    "../constants/recording": load("constants/recording.js"),
+  });
+  const upload = uploader.uploadRecordingAudio("session", "r1", "alice"); await new Promise(setImmediate);
+  await f.deletion.saveAccountDeletion("alice", { phase: "prepared", receipt: "ab".repeat(32) });
+  bytes.resolve(new Uint8Array(10)); await assert.rejects(upload, { code: "auth/account-changed" });
+  assert.equal(transfers, 0); assert.ok(await f.audio.getLocalRecordingUri("r1"));
+});
+
+test("a save dispatched at the deletion boundary retains a cleanup journal without copying or uploading", async () => {
+  const f = fixture();
+  await f.deletion.restoreAccountDeletions();
+  await f.deletion.saveAccountDeletion("alice", { phase: "prepared", receipt: "ab".repeat(32) });
+  await assert.rejects(f.save(), { code: "recording/account-deleting" });
+  const journal = JSON.parse(f.disk.metadata.get("@speaksharp/recording-queue/v1/alice/r1"));
+  assert.equal(journal.deletionPending, true); assert.equal(journal.syncStatus, "saving");
+  assert.ok(f.disk.files.has(journal.sourceUri)); assert.equal(await f.audio.getLocalRecordingUri("r1"), null);
+  await f.queue.clearAccountRecordingQueue("alice"); assert.equal(f.disk.files.has(journal.sourceUri), false);
+});
+
+test("confirmed deletion retries failed device cleanup after restart without another destructive request", async () => {
+  const f = fixture(); await f.save(); const d = accountDeletionFixture(f);
+  f.failWrite((key) => key.includes("local-recordings"));
+  await assert.rejects(d.module.deleteOwnAccount("password"));
+  assert.equal(f.deletion.getAccountDeletions().alice.phase, "confirmed");
+  const restarted = fixture(f.disk); await restarted.deletion.restoreAccountDeletions();
+  const resumed = accountDeletionFixture(restarted); resumed.auth.currentUser = null;
+  await resumed.module.confirmAccountDeletion("alice");
+  assert.equal(resumed.calls.some(([name]) => name === "callable"), false);
+  assert.equal(restarted.disk.metadata.has("@speaksharp/recording-queue/v1/alice/r1"), false);
+});
+
+test("account cleanup removes saving journals and cache sources, and preserves other owners and unowned legacy mappings", async () => {
+  const f = fixture(); f.failCopy(true); await assert.rejects(f.save()); f.failCopy(false);
+  await f.save("bob", "bob");
+  await f.audio.persistRecording(f.source("legacy-unknown"), "legacy-unknown");
+  await f.queue.clearAccountRecordingQueue("alice"); await f.audio.deleteAccountLocalAudio("alice");
+  assert.equal(f.disk.files.has("file:///cache/r1.m4a"), false);
+  assert.equal(f.disk.metadata.has("@speaksharp/recording-queue/v1/alice/r1"), false);
+  assert.ok(await f.audio.getLocalRecordingUri("bob")); assert.ok(await f.audio.getLocalRecordingUri("legacy-unknown"));
+});
 
 test("actual Firebase adapter uses canonical paths, exact existing schema/timestamp types, original uploader and receipt", async () => {
   const f = fixture(); await f.save(); const s = serviceFixture(f); await s.service.recordingSync.wake();

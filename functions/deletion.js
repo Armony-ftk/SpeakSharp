@@ -66,7 +66,7 @@ function createDeleteSessionHandler({
       throw new HttpsError("not-found", "The user profile does not exist.");
     }
 
-    if (profileSnapshot.data()?.disabled === true) {
+    if (profileSnapshot.data()?.disabled === true || profileSnapshot.data()?.deleting === true) {
       throw new HttpsError("permission-denied", "Access is denied.");
     }
 

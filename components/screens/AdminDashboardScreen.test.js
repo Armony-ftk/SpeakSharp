@@ -254,7 +254,7 @@ test.each([
 
 test.each([
   ["Dashboard", AdminDashboardScreen, "Unknown user"],
-  ["Activity", AdminActivityScreen, "—"],
+  ["Activity", AdminActivityScreen, "Deleted user"],
 ])("%s distinguishes trusted admin actions while preserving user labels", async (
   _name, Screen, unknownUserLabel,
 ) => {
