@@ -18,7 +18,6 @@ import {
 import { createUserProfile } from "../../services/profileService";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MIN_PASSWORD_LENGTH = 8;
 
 export default function SignUpScreen() {
   const [fullName, setFullName] = useState("");
@@ -30,6 +29,16 @@ export default function SignUpScreen() {
   const [loading, setLoading] = useState(false);
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
+
+  const missingPasswordRequirements = [];
+  if (password.length < 8) missingPasswordRequirements.push("at least 8 characters");
+  if (!/[A-Z]/.test(password)) missingPasswordRequirements.push("an uppercase letter");
+  if (!/[a-z]/.test(password)) missingPasswordRequirements.push("a lowercase letter");
+  if (!/[0-9]/.test(password)) missingPasswordRequirements.push("a number");
+  if (!/[^A-Za-z0-9\s]/.test(password)) missingPasswordRequirements.push("a special character");
+  const passwordError = missingPasswordRequirements.length
+    ? `Password needs ${missingPasswordRequirements.join(", ")}.`
+    : "";
 
   const handleCreateAccount = async () => {
     if (loading) return;
@@ -47,8 +56,8 @@ export default function SignUpScreen() {
       return;
     }
 
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setErrorMessage("Password must be at least 8 characters.");
+    if (passwordError) {
+      setErrorMessage(passwordError);
       return;
     }
 
@@ -134,7 +143,7 @@ export default function SignUpScreen() {
         value={password}
         onChangeText={setPassword}
         secureTextEntry
-        helperText="Must be at least 8 characters."
+        helperText={passwordError}
         editable={!loading}
       />
       <AuthTextField
@@ -163,6 +172,7 @@ export default function SignUpScreen() {
         label="CREATE ACCOUNT →"
         loadingLabel="CREATING ACCOUNT..."
         loading={loading}
+        disabled={Boolean(passwordError)}
         onPress={handleCreateAccount}
       />
 

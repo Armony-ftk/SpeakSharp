@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import ScreenContainer from "../ui/ScreenContainer";
 import AppHeader from "../ui/AppHeader";
 import SettingsRow from "../ui/SettingsRow";
+import SupportModal from "../ui/SupportModal";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
 import { getAuthErrorMessage, logout } from "../../services/authService";
@@ -21,6 +22,7 @@ export default function SettingsScreen() {
   const [offlineMode, setOfflineMode] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
+  const [supportModal, setSupportModal] = useState(null);
   const { role } = useAuth();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [password, setPassword] = useState("");
@@ -61,11 +63,6 @@ export default function SettingsScreen() {
           label="Edit Profile"
           onPress={() => router.push("/edit-profile")}
         />
-        <SettingsRow
-          icon="lock-closed-outline"
-          label="Change Password"
-          onPress={() => router.push("/change-password")}
-        />
       </View>
 
       <Text style={styles.sectionTitle}>Preferences</Text>
@@ -100,12 +97,12 @@ export default function SettingsScreen() {
         <SettingsRow
           icon="help-circle-outline"
           label="Help Center"
-          onPress={() => {}}
+          onPress={() => setSupportModal("help")}
         />
         <SettingsRow
           icon="document-text-outline"
           label="Terms of Service"
-          onPress={() => {}}
+          onPress={() => setSupportModal("terms")}
         />
       </View>
 
@@ -128,6 +125,7 @@ export default function SettingsScreen() {
         disabled={isSigningOut || deleting} onPress={() => { setDeleteError(""); setConfirmDelete(true); }}>
         <Text style={styles.signOutText}>Delete Account</Text>
       </TouchableOpacity> : null}
+      <SupportModal kind={supportModal} onClose={() => setSupportModal(null)} />
       <ConfirmDialog visible={confirmDelete} title="Delete your account?"
         message="This will permanently delete your SpeakSharp account, presentations, recordings, and feedback. This action cannot be undone."
         destructive loading={deleting} confirmLabel={deleting ? "Deleting your account..." : "Delete Account"}

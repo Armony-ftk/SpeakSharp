@@ -77,13 +77,6 @@ export default function SignInScreen() {
         <Text style={styles.errorText}>{errorMessage}</Text>
       ) : null}
 
-      <Text
-        style={styles.forgotLink}
-        onPress={() => router.push("/forgot-password")}
-      >
-        Forgot Password?
-      </Text>
-
       <PrimaryButton
         label="SIGN IN"
         loadingLabel="SIGNING IN..."
