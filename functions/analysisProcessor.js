@@ -1,3 +1,4 @@
+const { accountDeletionPending } = require("./accountDeletionGuard");
 const { randomUUID } = require("node:crypto");
 const { isDeepStrictEqual } = require("node:util");
 const { FieldValue, Timestamp } = require("firebase-admin/firestore");
@@ -81,10 +82,11 @@ function createAnalysisProcessor({ db, generate, logger }) {
 
     try {
       const input = await db.runTransaction(async (transaction) => {
+        const accountDeleting = await accountDeletionPending(transaction, db, ids.userId);
         const session = await transaction.get(sessionRef);
         const recording = await transaction.get(recordingRef);
         const data = recording.data();
-        if (!session.exists || session.data().deleting || !recording.exists || data.deleting || !ownsRecording(data, ids)
+        if (accountDeleting || !session.exists || session.data().deleting || !recording.exists || data.deleting || !ownsRecording(data, ids)
           || data.processingStatus !== "transcript_ready" || data.metrics == null
           || (data.analysisJob?.attempt ?? 0) !== attempt || hasSavedFeedback(data.aiFeedback)) return null;
         transaction.update(recordingRef, {
@@ -105,10 +107,11 @@ function createAnalysisProcessor({ db, generate, logger }) {
       const feedback = parseFeedback(response);
       stage = "saving";
       const saved = await db.runTransaction(async (transaction) => {
+        const accountDeleting = await accountDeletionPending(transaction, db, ids.userId);
         const session = await transaction.get(sessionRef);
         const recording = await transaction.get(recordingRef);
         const data = recording.data();
-        if (!session.exists || session.data().deleting || !recording.exists || data.deleting || !ownsRecording(data, ids)
+        if (accountDeleting || !session.exists || session.data().deleting || !recording.exists || data.deleting || !ownsRecording(data, ids)
           || data.processingStatus !== "analysing" || data.analysisJob?.id !== claimId
           || hasSavedFeedback(data.aiFeedback)) return false;
         // The app orders attempts by createdAt; new recordings currently have no attemptNumber.
@@ -149,10 +152,11 @@ function createAnalysisProcessor({ db, generate, logger }) {
       if (!claimed) return;
       try {
         await db.runTransaction(async (transaction) => {
+          const accountDeleting = await accountDeletionPending(transaction, db, ids.userId);
           const session = await transaction.get(sessionRef);
           const recording = await transaction.get(recordingRef);
           const data = recording.data();
-          if (!session.exists || session.data().deleting || !recording.exists || data.deleting
+          if (accountDeleting || !session.exists || session.data().deleting || !recording.exists || data.deleting
             || data.processingStatus !== "analysing" || data.analysisJob?.id !== claimId) return;
           transaction.update(recordingRef, {
             processingStatus: "failed", processingError: { stage: "analysis", code },
@@ -179,10 +183,11 @@ function createAnalysisRetry({ db, logger, now = Date.now }) {
     const recordingRef = sessionRef.collection("recordings").doc(recordingId);
     try {
       return await db.runTransaction(async (transaction) => {
+        const accountDeleting = await accountDeletionPending(transaction, db, uid);
         const session = await transaction.get(sessionRef);
         const recording = await transaction.get(recordingRef);
         const data = recording.data();
-        if (!session.exists || session.data().deleting || !recording.exists || data.deleting
+        if (accountDeleting || !session.exists || session.data().deleting || !recording.exists || data.deleting
           || !ownsRecording(data, { userId: uid, sessionId })) {
           throw new HttpsError("not-found", "This recording is unavailable.");
         }

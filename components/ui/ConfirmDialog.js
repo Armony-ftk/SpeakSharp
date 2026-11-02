@@ -1,4 +1,5 @@
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
@@ -14,9 +15,13 @@ export default function ConfirmDialog({
   loading = false,
   onCancel,
   onConfirm,
+  admin = false,
+  children,
 }) {
   const { colors, typography, isDark } = useAppTheme();
   const styles = getStyles(colors, typography, isDark);
+  const Overlay = admin ? SafeAreaView : View;
+  const Card = admin ? ScrollView : View;
 
   return (
     <Modal
@@ -25,8 +30,13 @@ export default function ConfirmDialog({
       animationType="fade"
       onRequestClose={onCancel}
     >
-      <View style={styles.overlay}>
-        <View style={styles.card}>
+      <Overlay style={styles.overlay}>
+        <Card
+          style={[styles.card, admin && styles.adminCard]}
+          contentContainerStyle={admin ? styles.adminContent : undefined}
+          accessibilityViewIsModal={admin || undefined}
+          accessibilityLabel={admin ? "Confirmation details" : undefined}
+        >
           <Text style={styles.title}>{title}</Text>
           {message ? <Text style={styles.message}>{message}</Text> : null}
 
@@ -39,42 +49,52 @@ export default function ConfirmDialog({
                     size={5}
                     color={colors.textSecondary}
                   />
-                  <Text style={styles.itemText}>{item}</Text>
+                  <Text style={[styles.itemText, admin && { flex: 1 }]}>{item}</Text>
                 </View>
               ))}
             </View>
           ) : null}
 
-          <View style={styles.actions}>
+          {children}
+          <View style={[styles.actions, admin && styles.adminActions]}>
             <TouchableOpacity
-              style={styles.cancelButton}
+              style={[styles.cancelButton, admin && styles.adminButton]}
+              accessibilityRole={admin ? "button" : undefined}
               onPress={onCancel}
               activeOpacity={0.8}
               disabled={loading}
             >
-              <Text style={styles.cancelText}>{cancelLabel}</Text>
+              <Text style={[styles.cancelText, admin && styles.adminButtonText]}>{cancelLabel}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[
                 styles.confirmButton,
+                admin && styles.adminButton,
                 destructive && styles.confirmButtonDestructive,
                 loading && styles.buttonDisabled,
               ]}
               onPress={onConfirm}
               activeOpacity={0.85}
               disabled={loading}
+              accessibilityRole={admin ? "button" : undefined}
+              accessibilityState={admin ? { disabled: loading, busy: loading } : undefined}
             >
-              <Text style={styles.confirmText}>{confirmLabel}</Text>
+              <Text style={[styles.confirmText, admin && styles.adminButtonText]}>{confirmLabel}</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </Card>
+      </Overlay>
     </Modal>
   );
 }
 
 function getStyles(colors, typography, isDark) {
   return StyleSheet.create({
+    adminCard: { maxWidth: 480, maxHeight: "90%", padding: 0, flexGrow: 0 },
+    adminContent: { padding: spacing.lg },
+    adminActions: { flexWrap: "wrap" },
+    adminButton: { minHeight: 48, flexBasis: 120, flexGrow: 1, flexShrink: 1, alignItems: "center", justifyContent: "center" },
+    adminButtonText: { textAlign: "center", flexShrink: 1 },
     overlay: {
       flex: 1,
       backgroundColor: "rgba(16, 24, 40, 0.65)",

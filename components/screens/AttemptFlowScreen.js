@@ -8,9 +8,10 @@ import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
 import { RECORDING_STATUS } from "../../constants/recordindStatuses";
 import {
-  getRecording, markRecordingUploaded, subscribeToRecording, getTranscriptionErrorMessage,
+  subscribeToRecording, getTranscriptionErrorMessage,
 } from "../../services/recordingService";
-import { getUploadErrorMessage, uploadRecordingAudio } from "../../services/audioUploadService";
+import { useAccountData } from "../../context/AccountDataContext";
+import { retryQueuedUpload } from "../../services/recordingSyncService";
 import { getMetricsProgress, hasSavedTranscript } from "../../utils/metricsProgress";
 import { getAnalysisProgress, getAnalysisErrorMessage, getAnalysisRetryErrorMessage } from "../../utils/analysisProgress";
 import { requestAnalysisRetry } from "../../services/processingService";
@@ -36,9 +37,20 @@ export default function AttemptFlowScreen() {
 }
 
 function RecordingProcessing({ sessionId, recordingId }) {
-  const [recording, setRecording] = useState(null);
+  const account = useAccountData();
+  const [remoteRecording, setRecording] = useState(null);
+  const shared = account.recordingEntries.find((entry) => entry.data.id === sessionId);
+  const recording = remoteRecording ?? shared?.recordings.find((entry) => entry.id === recordingId) ?? null;
+  const localEntry = account.pendingRecordings.find((entry) => entry.recordingId === recordingId && entry.sessionId === sessionId);
   const [session, setSession] = useState(null);
-  const [uploadState, setUploadState] = useState("pending");
+  const [requestState, setUploadState] = useState("queued");
+  const hasRemoteUpload = Boolean(recording?.uploadedAt || hasSavedTranscript(recording)
+    || ["transcribing", "transcript_ready", "analysing", "completed"].includes(recording?.processingStatus));
+  const uploadState = hasRemoteUpload && !localEntry?.retryProcessing ? "done"
+    : localEntry?.syncStatus === "synced" ? "done"
+      : localEntry?.syncStatus === "error" ? "error"
+        : localEntry?.syncStatus === "uploading" && account.networkOnline ? "uploading"
+          : localEntry ? "queued" : requestState;
   const [uploadError, setUploadError] = useState("");
   const [listenerError, setListenerError] = useState("");
   const [listenerVersion, setListenerVersion] = useState(0);
@@ -76,43 +88,37 @@ function RecordingProcessing({ sessionId, recordingId }) {
     try {
       return subscribeToRecording(sessionId, recordingId, (value) => {
         setRecording(value);
-        setListenerError(value ? "" : "This recording is unavailable or has been deleted.");
+        setListenerError(value || localEntry ? "" : "This recording is unavailable or has been deleted.");
         if (value?.uploadedAt && !uploadInProgressRef.current) setUploadState("done");
-      }, () => setListenerError("Could not load processing updates. Check your connection and reconnect."));
+      }, () => setListenerError(localEntry ? "" : "Could not load processing updates. Check your connection and reconnect."));
     } catch {
       setListenerError("Could not load this recording. Please sign in and reopen the session.");
     }
-  }, [sessionId, recordingId, listenerVersion]);
+  }, [sessionId, recordingId, listenerVersion, Boolean(localEntry)]);
 
   const startUpload = useCallback(async (retryProcessing = false) => {
     if (uploadInProgressRef.current || !sessionId || !recordingId) return;
     uploadInProgressRef.current = true;
     if (mountedRef.current) {
-      setUploadState("uploading");
       setUploadError("");
     }
     try {
-      const current = await getRecording(sessionId, recordingId);
-      if (!current) throw new Error("The recording no longer exists.");
-      const eligible = [RECORDING_STATUS.PENDING_UPLOAD, RECORDING_STATUS.FAILED].includes(current.processingStatus);
-      if (!eligible || hasSavedTranscript(current) || (current.uploadedAt && !retryProcessing)) {
-        if (mountedRef.current) setUploadState("done");
-        return;
-      }
-      const audioPath = await uploadRecordingAudio(sessionId, recordingId);
-      await markRecordingUploaded(sessionId, recordingId, audioPath);
-      if (mountedRef.current) setUploadState("done");
+      await retryQueuedUpload(sessionId, recordingId, retryProcessing);
     } catch (error) {
       if (mountedRef.current) {
         setUploadState("error");
-        setUploadError(getUploadErrorMessage(error));
+        setUploadError(error?.message ?? "Upload failed. Your saved audio has been retained.");
       }
     } finally {
       uploadInProgressRef.current = false;
     }
   }, [sessionId, recordingId]);
 
-  useEffect(() => { void startUpload(); }, [startUpload]);
+  // Legacy saved attempts join the same queue. New local-first saves are already
+  // owned by the coordinator; opening this screen never starts another upload.
+  useEffect(() => {
+    if (!localEntry && !hasRemoteUpload && recording?.processingStatus === RECORDING_STATUS.PENDING_UPLOAD) void startUpload();
+  }, [startUpload, Boolean(localEntry), hasRemoteUpload, recording?.processingStatus]);
 
   const retryAnalysis = async () => {
     if (analysisRetryRef.current) return;
@@ -150,9 +156,10 @@ function RecordingProcessing({ sessionId, recordingId }) {
     : analysisWaiting ? recording?.updatedAt : null)?.toMillis?.();
   const analysisStalled = Number.isFinite(analysisSince) && Date.now() - analysisSince > 6 * 60 * 1000;
   const showAnalysisRetry = analysisProgress.failed || analysisStalled || retryingAnalysis || Boolean(analysisRetryError);
+  const visibleListenerError = localEntry && !remoteRecording ? "" : listenerError;
   const goBack = () => router.replace({ pathname: "/session/[id]", params: { id: sessionId } });
 
-  if (!recording && !listenerError) {
+  if (!recording && !visibleListenerError) {
     return (
       <ScreenContainer contentStyle={styles.centeredContent}>
         <ActivityIndicator color={colors.accent} />
@@ -162,7 +169,15 @@ function RecordingProcessing({ sessionId, recordingId }) {
     );
   }
 
-  if (status === RECORDING_STATUS.COMPLETED && !listenerError) {
+  if (localEntry?.deletionPending) {
+    return <ScreenContainer contentStyle={styles.centeredContent}>
+      <Text style={styles.processingTitle}>Deletion unfinished</Text>
+      <Text style={styles.processingHint}>Return to the session and retry Delete. Your audio has been retained until deletion is confirmed.</Text>
+      <PrimaryButton label="Back to Session" onPress={goBack} />
+    </ScreenContainer>;
+  }
+
+  if (status === RECORDING_STATUS.COMPLETED && !visibleListenerError) {
     if (hasRecordingFeedback(recording)) {
       return <RecordingFeedbackView recording={recording} session={session} onBackToSession={goBack} />;
     }
@@ -186,19 +201,21 @@ function RecordingProcessing({ sessionId, recordingId }) {
       <Text style={styles.processingTitle}>
         {analysisProgress.ready ? "Analysis complete" : failed ? "Processing failed"
           : analysisProgress.active ? "Generating AI feedback" : metricsProgress.ready ? "Speaking metrics complete"
-            : transcriptReady ? "Transcription complete" : "Processing your recording"}
+            : transcriptReady ? "Transcription complete"
+              : uploadState === "queued" ? "Waiting for upload/transcription" : "Processing your recording"}
       </Text>
       {PROCESSING_STEPS.map((step, index) => {
         const done = index === 0 ? uploadDone : index === 1 ? transcriptReady
           : index === 2 ? metricsProgress.ready : analysisProgress.ready;
-        const active = !done && !listenerError && (index === 0
-          ? uploadState === "pending" || uploadState === "uploading"
+        const active = !done && !visibleListenerError && (index === 0
+          ? uploadState === "uploading"
           : index === 1 ? status === RECORDING_STATUS.TRANSCRIBING
             : index === 2 ? metricsProgress.active : analysisProgress.active);
         const stepFailed = index === 0 ? uploadState === "error"
           : index === 1 ? failed && !metricsProgress.failed && !analysisProgress.failed
             : index === 2 ? metricsProgress.failed : analysisProgress.failed;
         let label = step;
+        if (index === 0 && !done && uploadState === "queued") label = "Waiting for upload/transcription";
         if (index === 0 && active) label = "Uploading recording";
         if (index === 0 && stepFailed) label = "Recording upload failed";
         if (index === 1 && active) label = "Generating transcription";
@@ -221,15 +238,15 @@ function RecordingProcessing({ sessionId, recordingId }) {
           </View>
         );
       })}
-      {listenerError ? (
+      {visibleListenerError ? (
         <>
-          <Text style={styles.uploadErrorText}>{listenerError}</Text>
+          <Text style={styles.uploadErrorText}>{visibleListenerError}</Text>
           {recordingId ? <PrimaryButton label="RECONNECT" onPress={() => setListenerVersion((value) => value + 1)} style={styles.retryButton} /> : null}
         </>
       ) : null}
       {uploadState === "error" ? (
         <>
-          <Text style={styles.uploadErrorText}>{uploadError}</Text>
+          <Text style={styles.uploadErrorText}>{localEntry?.errorMessage || uploadError}</Text>
           <PrimaryButton label="RETRY UPLOAD" onPress={() => startUpload(canRetryProcessing)} style={styles.retryButton} />
         </>
       ) : failed ? (
@@ -247,11 +264,11 @@ function RecordingProcessing({ sessionId, recordingId }) {
               : "This may take a moment. Your saved recording will be kept."}
         </Text>
       )}
-      {failed && canRetryProcessing && uploadState === "done" && !listenerError ? (
+      {failed && canRetryProcessing && uploadState === "done" && !visibleListenerError ? (
         <PrimaryButton label="RETRY TRANSCRIPTION"
           onPress={() => startUpload(true)} style={styles.retryButton} />
       ) : null}
-      {showAnalysisRetry && !listenerError ? (
+      {showAnalysisRetry && !visibleListenerError ? (
         <>
           {analysisRetryError ? <Text style={styles.uploadErrorText}>{analysisRetryError}</Text> : null}
           <PrimaryButton label="RETRY AI ANALYSIS" onPress={retryAnalysis}

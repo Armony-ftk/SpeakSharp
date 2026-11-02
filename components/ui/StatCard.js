@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
 
@@ -8,21 +8,28 @@ export default function StatCard({
   valueColor,
   subtitle,
   subtitleColor,
+  admin = false,
 }) {
   const { colors } = useAppTheme();
+  const { fontScale } = useWindowDimensions();
   const styles = getStyles(colors);
 
   return (
-    <View style={styles.stat}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={[styles.value, valueColor && { color: valueColor }]}>
+    <View style={[styles.stat, admin && styles.adminCard]}>
+      <Text style={[styles.label, admin && { alignSelf: "stretch", minHeight: 38 * fontScale, lineHeight: 19 }]}>{label}</Text>
+      <Text
+        style={[styles.value, admin && styles.adminValue, valueColor && { color: valueColor }]}
+        numberOfLines={admin ? 1 : undefined}
+        adjustsFontSizeToFit={admin}
+        minimumFontScale={0.65}
+      >
         {value}
       </Text>
-      {subtitle ? (
+      {subtitle || admin ? (
         <Text
-          style={[styles.subtitle, subtitleColor && { color: subtitleColor }]}
+          style={[styles.subtitle, admin && styles.adminSubtitle, subtitleColor && { color: subtitleColor }]}
         >
-          {subtitle}
+          {subtitle || " "}
         </Text>
       ) : null}
     </View>
@@ -31,6 +38,22 @@ export default function StatCard({
 
 function getStyles(colors) {
   return StyleSheet.create({
+    adminCard: {
+      minWidth: 0,
+      minHeight: 152,
+      alignItems: "flex-start",
+      padding: spacing.md,
+      shadowOpacity: 0.03,
+      shadowRadius: 8,
+      elevation: 1,
+    },
+    adminValue: {
+      alignSelf: "stretch",
+      fontSize: 30,
+      fontVariant: ["tabular-nums"],
+      marginTop: spacing.sm,
+    },
+    adminSubtitle: { fontSize: 12, marginTop: spacing.xs },
     stat: {
       flex: 1,
       alignItems: "center",

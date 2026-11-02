@@ -33,6 +33,7 @@ const session = {
   createdAt: new Date(), updatedAt: new Date(),
 };
 async function setup() {
+  await adminDb.doc("users/owner").set({ fullName: "Owner", email: "owner@example.test", createdAt: new Date() });
   await adminDb.doc(sessionPath).set(session);
   const id = `recording-${++counter}`;
   const path = `${sessionPath}/recordings/${id}`;
@@ -125,6 +126,7 @@ test("deleting session blocks new recordings, uploads, receipts, and clearing de
 });
 
 test("unchanged owner session CRUD remains allowed outside deletion", async () => {
+  await setup();
   await setDoc(doc(owner.db, "users/owner/sessions/client-created"), {
     ...session, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   });
@@ -231,8 +233,14 @@ test("real transactions carry transcription through metrics and analysis, dedupl
   assert.equal(finalParent.attemptCount, 0);
 });
 
-test("existing callable authentication and cascade remove both audio layouts and child documents", async () => {
-  const { deleteSession } = require("../deletion");
+test("session handler with mocked Auth and real cascade removes both audio layouts and child documents", async () => {
+  const { createDeleteSessionHandler } = require("../deletion");
+  // This suite runs only Firestore/Storage emulators. Never call remote Auth.
+  const deleteSession = createDeleteSessionHandler({
+    getAuth: () => ({ getUser: async (uid) => ({ uid, disabled: false }) }),
+    getDb: () => adminDb,
+    getStorage: () => getAdminStorage(adminApp),
+  });
   const f = await setup(); await setDoc(f.reference, f.data); await upload(owner, f.data, f.id);
   const oldId = "legacy-deletion";
   const oldAudioPath = `users/owner/sessions/session/recordings/${oldId}.m4a`;
@@ -240,9 +248,9 @@ test("existing callable authentication and cascade remove both audio layouts and
     ...f.data, audioPath: oldAudioPath, createdAt: new Date(), updatedAt: new Date(),
   });
   await upload(owner, { audioPath: oldAudioPath }, oldId);
-  await assert.rejects(deleteSession.run({ data: { sessionId: "session" } }), (error) => error.code === "unauthenticated");
-  await assert.rejects(deleteSession.run({ auth: { uid: "other" }, data: { sessionId: "session" } }), (error) => error.code === "not-found");
-  const result = await deleteSession.run({ auth: { uid: "owner" }, data: { sessionId: "session" } });
+  await assert.rejects(deleteSession({ data: { sessionId: "session" } }), (error) => error.code === "unauthenticated");
+  await assert.rejects(deleteSession({ auth: { uid: "other" }, data: { sessionId: "session" } }), (error) => error.code === "not-found");
+  const result = await deleteSession({ auth: { uid: "owner" }, data: { sessionId: "session" } });
   assert.equal(result.success, true);
   assert.equal((await adminDb.doc(sessionPath).get()).exists, false);
   assert.equal((await adminDb.doc(f.path).get()).exists, false);
@@ -365,4 +373,20 @@ test("late upload finalization after deletion removes its real object without pr
   assert.equal((await file.exists())[0], false);
   assert.equal((await record.reference.get()).exists, false);
   assert.equal((await f.parent.get()).data().ratingSum, 13);
+});
+
+
+test("suspended profiles deny canonical and legacy recording reads, creates and receipts; reactivation restores access", async () => {
+  const f = await setup();
+  await setDoc(f.reference, f.data);
+  const legacyPath = sessionPath + "/recordings/suspended-legacy";
+  await adminDb.doc(legacyPath).set({ ...f.data, audioPath: "users/owner/sessions/session/recordings/suspended-legacy.m4a", createdAt: new Date(), updatedAt: new Date() });
+  await adminDb.doc("users/owner").update({ disabled: true });
+  await denied(getDoc(f.reference));
+  await denied(getDoc(doc(owner.db, legacyPath)));
+  await denied(setDoc(doc(owner.db, sessionPath + "/recordings/suspended-new"), { ...f.data, audioPath: "recordings/owner/session/suspended-new.m4a" }));
+  await denied(updateDoc(f.reference, { uploadedAt: serverTimestamp(), updatedAt: serverTimestamp() }));
+  await adminDb.doc("users/owner").update({ disabled: false });
+  assert.equal((await getDoc(f.reference)).exists(), true);
+  await updateDoc(f.reference, { uploadedAt: serverTimestamp(), updatedAt: serverTimestamp() });
 });

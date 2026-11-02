@@ -24,9 +24,13 @@ import {
   updateSession,
 } from "../../services/sessionService";
 import { deleteRecording, getRecordingDeletionErrorMessage, getRecordings } from "../../services/recordingService";
+import { useAccountData } from "../../context/AccountDataContext";
+import { removeQueuedRecording } from "../../storage/recordingQueue";
+import { deleteLocalRecording } from "../../storage/audioStorage";
+import { pauseQueuedUploads } from "../../services/recordingSyncService";
 
 const RECORDING_LABELS = {
-  pending_upload: "Waiting for upload / processing",
+  pending_upload: "Waiting for upload/transcription",
   transcribing: "Generating transcription",
   transcript_ready: "Transcript ready",
   analysing: "Analysing",
@@ -66,8 +70,9 @@ export default function SessionDetailsScreen() {
   const id = firstParam(params.id);
   const localRecordingSaved =
     firstParam(params.localRecordingSaved) === "1";
-  const [session, setSession] = useState(null);
-  const [recordings, setRecordings] = useState([]);
+  const account = useAccountData();
+  const [loadedSession, setSession] = useState(null);
+  const [loadedRecordings, setRecordings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [showMenu, setShowMenu] = useState(false);
@@ -79,6 +84,9 @@ export default function SessionDetailsScreen() {
   const [deletingRecordingId, setDeletingRecordingId] = useState(null);
   const recordingDeletionBusy = useRef(false);
   const deletedRecordingIds = useRef(new Set());
+  const session = account.sessions.find((value) => value.id === id) ?? loadedSession;
+  const recordings = (account.recordingEntries.find((entry) => entry.data.id === id)?.recordings
+    ?? loadedRecordings).filter((recording) => !deletedRecordingIds.current.has(recording.id));
   const { colors, typography } = useAppTheme();
   const styles = getStyles(colors, typography);
 
@@ -128,12 +136,21 @@ export default function SessionDetailsScreen() {
     if (deleting || recordingDeletionBusy.current) return;
     setDeleting(true);
     setErrorMessage("");
+    let cloudDeleted = false;
     try {
+      await pauseQueuedUploads(id);
       await deleteSession(id);
+      cloudDeleted = true;
+      for (const entry of account.pendingRecordings.filter((entry) => entry.sessionId === id)) {
+        await removeQueuedRecording(account.uid, entry.recordingId);
+        await deleteLocalRecording(entry.recordingId, { onlyMapped: true });
+      }
       setShowDeleteSession(false);
       router.replace("/sessions");
     } catch (error) {
-      setErrorMessage(getSessionErrorMessage(error));
+      setErrorMessage(cloudDeleted
+        ? "Session deleted from the cloud, but some local audio or sync information could not be cleared. Your remaining files have been retained."
+        : getSessionErrorMessage(error));
       setShowDeleteSession(false);
       setDeleting(false);
     }
@@ -145,8 +162,12 @@ export default function SessionDetailsScreen() {
     recordingDeletionBusy.current = true;
     setDeletingRecordingId(recordingId);
     setErrorMessage("");
+    let cloudDeleted = false;
     try {
+      await pauseQueuedUploads(id, recordingId);
       const result = await deleteRecording(id, recordingId);
+      cloudDeleted = true;
+      await removeQueuedRecording(account.uid, recordingId);
       deletedRecordingIds.current.add(recordingId);
       setRecordings((current) => current.filter((recording) => recording.id !== recordingId));
       setRecordingToDelete(null);
@@ -155,7 +176,9 @@ export default function SessionDetailsScreen() {
         setErrorMessage("Recording deleted from the cloud, but its saved audio could not be removed from this device.");
       }
     } catch (error) {
-      setErrorMessage(getRecordingDeletionErrorMessage(error));
+      setErrorMessage(cloudDeleted
+        ? "Recording deleted from the cloud, but local sync information could not be cleared. Retry Delete to finish local cleanup."
+        : getRecordingDeletionErrorMessage(error));
       setRecordingToDelete(null);
     } finally {
       recordingDeletionBusy.current = false;
@@ -267,9 +290,13 @@ export default function SessionDetailsScreen() {
             onPress={() => router.push(`/session/${id}/attempt`)} />
           {recordings.map((recording, index) => (
             <AttemptListItem key={recording.id}
-              number={recording.attemptNumber ?? recordings.length - index}
-              title={recording.deleting ? "Deletion unfinished: retry Delete" : RECORDING_LABELS[recording.processingStatus] ?? "Recording saved"}
-              timestamp={formatDuration(recording.durationSeconds)}
+              number={recordings.length - index}
+              title={recording.deleting ? "Deletion unfinished: retry Delete"
+                : recording.processingStatus === "pending_upload" && recording.localSyncStatus === "error" ? "Upload failed / Retry"
+                  : recording.processingStatus === "pending_upload" && recording.localSyncStatus === "uploading" && account.networkOnline ? "Uploading recording"
+                    : RECORDING_LABELS[recording.processingStatus] ?? "Recording saved"}
+              timestamp={`${formatDuration(recording.durationSeconds)}${recording.createdAt
+                ? ` · ${(recording.createdAt.toDate?.() ?? new Date(recording.createdAt)).toLocaleString()}` : ""}`}
               disabled={deleting || deletingRecordingId != null}
               deleting={deletingRecordingId === recording.id}
               onDelete={() => {

@@ -1,3 +1,4 @@
+const { accountDeletionPending } = require("./accountDeletionGuard");
 const { FieldValue } = require("firebase-admin/firestore");
 const { calculateSpeakingMetrics } = require("./speakingMetrics");
 
@@ -97,10 +98,11 @@ function createTranscriptionProcessor({ db, bucketName, downloadAudio, deleteAud
 
     async function finish(updates, expectedStatus = "transcribing") {
       return db.runTransaction(async (transaction) => {
+        const accountDeleting = await accountDeletionPending(transaction, db, ids.userId);
         const session = await transaction.get(sessionRef);
         const recording = await transaction.get(recordingRef);
         const data = recording.data();
-        if (!session.exists || session.data().deleting || !recording.exists || data.deleting
+        if (accountDeleting || !session.exists || session.data().deleting || !recording.exists || data.deleting
           || !ownsRecording(data, ids, object.name)
           || data.processingStatus !== expectedStatus
           || data.transcriptionJob?.generation !== generation) return false;
@@ -113,11 +115,12 @@ function createTranscriptionProcessor({ db, bucketName, downloadAudio, deleteAud
 
     try {
       const claim = await db.runTransaction(async (transaction) => {
+        const accountDeleting = await accountDeletionPending(transaction, db, ids.userId);
         const session = await transaction.get(sessionRef);
         const recording = await transaction.get(recordingRef);
         // An upload authorized before deletion can finalize afterwards. Remove only
         // that event's object generation, outside the transaction, without processing.
-        if (!session.exists || session.data().deleting || !recording.exists || recording.data().deleting) {
+        if (accountDeleting || !session.exists || session.data().deleting || !recording.exists || recording.data().deleting) {
           return { deleteAudio: true };
         }
         const data = recording.data();
@@ -162,9 +165,10 @@ function createTranscriptionProcessor({ db, bucketName, downloadAudio, deleteAud
 
       // Recheck after download to avoid paying for a session being deleted.
       stage = "checking";
+      const accountDeleting = (await db.doc(`accountDeletions/${ids.userId}`).get()).exists;
       const session = await sessionRef.get();
       const recording = await recordingRef.get();
-      if (!session.exists || session.data().deleting || !recording.exists || recording.data().deleting
+      if (accountDeleting || !session.exists || session.data().deleting || !recording.exists || recording.data().deleting
         || recording.data().transcriptionJob?.generation !== generation
         || recording.data().processingStatus !== "transcribing") return;
 

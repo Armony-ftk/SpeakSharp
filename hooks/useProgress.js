@@ -46,6 +46,7 @@ export function useProgress(enabled = true) {
         return;
       }
       setState({ uid, retryVersion, loading: false, errorMessage: "",
+        recordingEntries: entries.map(({ data, recordings }) => ({ data, recordings })),
         sessions: getSessionSummaries(entries),
         progress: calculateProgress(sessions.size, entries.flatMap((session) => session.recordings)) });
     }
@@ -99,6 +100,7 @@ export function useProgress(enabled = true) {
   // Hide the previous account synchronously, before effect cleanup runs.
   const current = uid && state?.uid === uid && state.retryVersion === retryVersion ? state : null;
   return {
+    recordingEntries: current?.recordingEntries ?? [],
     sessions: current?.sessions ?? [],
     progress: current?.progress ?? EMPTY_PROGRESS,
     loading: initializing || Boolean(uid && (!current || current.loading)),

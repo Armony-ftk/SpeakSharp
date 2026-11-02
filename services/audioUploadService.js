@@ -4,6 +4,7 @@ import { auth, storage } from "../config/firebase";
 import { getLocalRecordingUri } from "../storage/audioStorage";
 import { prepareRecordingUpload } from "./recordingService";
 import { recordingAudioPath } from "../constants/recording";
+import { accountDeletionBlocked } from "../storage/accountDeletionState";
 
 function requireCurrentUid() {
   const uid = auth.currentUser?.uid;
@@ -63,7 +64,13 @@ function readNativeFileBlob(localUri) {
   });
 }
 
-export async function uploadRecordingAudio(sessionId, recordingId) {
+export async function uploadRecordingAudio(sessionId, recordingId, expectedUid = requireCurrentUid()) {
+  const checkOwner = () => {
+    if (accountDeletionBlocked(expectedUid) || requireCurrentUid() !== expectedUid) {
+      throw Object.assign(new Error("The authenticated account changed."), { code: "auth/account-changed" });
+    }
+  };
+  checkOwner();
   const localUri = await getLocalRecordingUri(recordingId);
 
   if (!localUri) {
@@ -81,8 +88,10 @@ export async function uploadRecordingAudio(sessionId, recordingId) {
   }
 
   // Commit the expected path before Storage can publish the finalized event.
+  checkOwner();
   const storagePath = await prepareRecordingUpload(sessionId, recordingId);
   const audioBytes = await localFile.bytes();
+  checkOwner();
   const storageRef = ref(storage, storagePath);
   const metadata = {
     contentType: "audio/mp4",
@@ -103,6 +112,7 @@ export async function uploadRecordingAudio(sessionId, recordingId) {
     // Read a native file Blob to avoid that unsupported React Native conversion.
     const nativeBlob = await readNativeFileBlob(localUri);
     try {
+      checkOwner();
       await uploadBytes(storageRef, nativeBlob, metadata);
     } finally {
       nativeBlob.close?.();

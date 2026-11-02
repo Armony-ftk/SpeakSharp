@@ -8,10 +8,16 @@ import { ThemeProvider, useAppTheme } from '../constants/ThemeContext';
 import { AuthProvider } from '../context/AuthContext';
 import { AccountDataProvider } from '../context/AccountDataContext';
 import { useAuth } from '../hooks/useAuth';
+import AccountDeletionGate from '../components/AccountDeletionGate';
 
 function RootLayoutNav() {
   const { colors, isDark } = useAppTheme();
-  const { currentUser, initializing, isEmailVerified } = useAuth();
+  const {
+    currentUser,
+    initializing,
+    isEmailVerified,
+    role,
+  } = useAuth();
 
   if (initializing) {
     return <SplashScreen />;
@@ -19,7 +25,10 @@ function RootLayoutNav() {
 
   const isSignedOut = !currentUser;
   const needsVerification = Boolean(currentUser) && !isEmailVerified;
-  const hasAppAccess = Boolean(currentUser) && isEmailVerified;
+  const hasAppAccess = Boolean(currentUser) && isEmailVerified
+    && (role === 'user' || role === 'admin');
+  const hasAdminRouteAccess =
+    Boolean(currentUser) && isEmailVerified;
 
   return (
     <AccountDataProvider key={hasAppAccess ? currentUser.uid : 'signed-out'} enabled={hasAppAccess}>
@@ -43,6 +52,10 @@ function RootLayoutNav() {
             <Stack.Screen name="verify-email" />
           </Stack.Protected>
 
+          <Stack.Protected guard={hasAdminRouteAccess}>
+            <Stack.Screen name="admin" options={{ headerShown: false }} />
+          </Stack.Protected>
+
           <Stack.Protected guard={hasAppAccess}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="settings" />
@@ -64,7 +77,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ThemeProvider>
         <AuthProvider>
-          <RootLayoutNav />
+          <AccountDeletionGate><RootLayoutNav /></AccountDeletionGate>
         </AuthProvider>
       </ThemeProvider>
     </SafeAreaProvider>

@@ -19,7 +19,6 @@ import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
 import { getSessionById, getSessionErrorMessage } from "../../services/sessionService";
 import {
-  createRecording,
   createRecordingId,
   getRecordingErrorMessage,
 } from "../../services/recordingService";
@@ -27,8 +26,9 @@ import { MAX_RECORDING_SECONDS, useRecording } from "../../hooks/useRecording";
 import {
   deleteLocalRecording,
   deleteTemporaryAudio,
-  persistRecording,
 } from "../../storage/audioStorage";
+import { useAccountData } from "../../context/AccountDataContext";
+import { removeQueuedRecording, saveQueuedRecording } from "../../storage/recordingQueue";
 
 function firstParam(value) {
   return Array.isArray(value) ? value[0] : value;
@@ -44,7 +44,9 @@ function formatDuration(totalSeconds) {
 export default function LocalRecordingScreen() {
   const params = useLocalSearchParams();
   const sessionId = firstParam(params.id);
-  const [session, setSession] = useState(null);
+  const account = useAccountData();
+  const [loadedSession, setSession] = useState(null);
+  const session = account.sessions.find((value) => value.id === sessionId) ?? loadedSession;
   const [loadingSession, setLoadingSession] = useState(true);
   const [screenError, setScreenError] = useState("");
   const [playbackError, setPlaybackError] = useState("");
@@ -171,6 +173,7 @@ export default function LocalRecordingScreen() {
     pausePlayback();
     try {
       if (pendingRecordingIdRef.current) {
+        await removeQueuedRecording(account.uid, pendingRecordingIdRef.current);
         await deleteLocalRecording(pendingRecordingIdRef.current);
         pendingRecordingIdRef.current = null;
       }
@@ -216,7 +219,8 @@ export default function LocalRecordingScreen() {
     pausePlayback();
     const temporaryUri = recording.recordingUri;
     let recordingId = pendingRecordingIdRef.current;
-    let locallyPersisted = false;
+    // Protect the source from recorder unmount cleanup while journal/copy runs.
+    recording.protectDuringSave();
 
     try {
       if (!recordingId) {
@@ -224,11 +228,8 @@ export default function LocalRecordingScreen() {
         pendingRecordingIdRef.current = recordingId;
       }
 
-      await persistRecording(temporaryUri, recordingId);
-      locallyPersisted = true;
-      await createRecording(sessionId, recordingId, {
-        duration: recording.durationSeconds,
-      });
+      await saveQueuedRecording({ userId: account.uid, sessionId, recordingId,
+        sourceUri: temporaryUri, durationSeconds: recording.durationSeconds, session });
 
       recording.markAccepted();
       try {
@@ -247,16 +248,8 @@ export default function LocalRecordingScreen() {
         });
       }
     } catch (error) {
-      if (locallyPersisted && recordingId) {
-        try {
-          await deleteLocalRecording(recordingId);
-        } catch (cleanupError) {
-          if (__DEV__) {
-            console.warn("Could not roll back persisted recording", cleanupError);
-          }
-        }
-      }
       if (mountedRef.current) {
+        recording.releaseFailedSave();
         setScreenError(getRecordingErrorMessage(error));
       }
       acceptInProgressRef.current = false;
@@ -264,7 +257,7 @@ export default function LocalRecordingScreen() {
     }
   };
 
-  if (loadingSession) {
+  if (loadingSession && !session) {
     return (
       <ScreenContainer contentStyle={styles.centeredContent}>
         <ActivityIndicator color={colors.accent} />
@@ -284,7 +277,8 @@ export default function LocalRecordingScreen() {
     );
   }
 
-  const attemptNumber = (session.attemptCount ?? 0) + 1;
+  const attemptNumber = (account.recordingEntries.find((entry) => entry.data.id === sessionId)?.recordings.length
+    ?? session.attemptCount ?? 0) + 1;
   const elapsedSeconds = Math.min(
     MAX_RECORDING_SECONDS,
     Math.floor(recording.durationMillis / 1000),

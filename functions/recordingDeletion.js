@@ -1,3 +1,4 @@
+const { accountDeletionPending } = require("./accountDeletionGuard");
 const { FieldValue } = require("firebase-admin/firestore");
 const { HttpsError } = require("firebase-functions/v2/https");
 
@@ -62,9 +63,10 @@ function createRecordingDeletion({ db, bucket, logger }) {
     let stage = "claim";
     try {
       const paths = await db.runTransaction(async (transaction) => {
+        const accountDeleting = await accountDeletionPending(transaction, db, uid);
         const session = await transaction.get(sessionRef);
         const recording = await transaction.get(recordingRef);
-        if (!session.exists) throw new HttpsError("not-found", "This session no longer exists.");
+        if (accountDeleting || !session.exists) throw new HttpsError("not-found", "This session no longer exists.");
         checkOwnership(session.data(), recording.data(), uid, sessionId);
         if (session.data().deleting) {
           throw new HttpsError("failed-precondition", "Session deletion is in progress. Please retry deleting the session.");
@@ -84,10 +86,11 @@ function createRecordingDeletion({ db, bucket, logger }) {
 
       stage = "commit";
       await db.runTransaction(async (transaction) => {
+        const accountDeleting = await accountDeletionPending(transaction, db, uid);
         const session = await transaction.get(sessionRef);
         const recording = await transaction.get(recordingRef);
         if (!recording.exists) return; // A concurrent request already committed.
-        if (!session.exists || session.data().deleting) {
+        if (accountDeleting || !session.exists || session.data().deleting) {
           throw new HttpsError("failed-precondition", "Session deletion is in progress. Please retry deleting the session.");
         }
         checkOwnership(session.data(), recording.data(), uid, sessionId);

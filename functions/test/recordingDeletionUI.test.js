@@ -59,6 +59,10 @@ async function screenFixture() {
       deleteRecording: (...args) => { data.calls.push(args); return operation.promise; },
       getRecordingDeletionErrorMessage: () => "Check your connection and retry Delete.",
     },
+    "../../context/AccountDataContext": { useAccountData: () => ({ uid: "alice", sessions: [], recordingEntries: [], pendingRecordings: [] }) },
+    "../../storage/recordingQueue": { removeQueuedRecording: async () => {} },
+    "../../storage/audioStorage": { deleteLocalRecording: async () => {} },
+    "../../services/recordingSyncService": { pauseQueuedUploads: async () => async () => {} },
   };
   for (const name of ["ScreenContainer", "StatCard", "EmptyState", "ActionSheet", "ConfirmDialog", "AttemptListItem", "PrimaryButton"]) imports[`../ui/${name}`] = { default: name, __esModule: true };
   const Screen = load("components/screens/SessionDetailsScreen.js", imports).default;
@@ -92,7 +96,7 @@ test("confirm calls once, blocks duplicate taps, refreshes, and only removes the
   // Even a stale cached refresh cannot reintroduce an acknowledged deletion.
   f.operation.resolve({ success: true }); await pending;
   assert.equal(f.data.loads, 2); assert.equal(f.rows().length, 1);
-  assert.equal(f.rows()[0].props.title, "Waiting for upload / processing");
+  assert.equal(f.rows()[0].props.title, "Waiting for upload/transcription");
   assert.equal(f.dialog().props.visible, false);
 });
 

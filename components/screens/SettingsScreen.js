@@ -1,13 +1,18 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import ScreenContainer from "../ui/ScreenContainer";
 import AppHeader from "../ui/AppHeader";
 import SettingsRow from "../ui/SettingsRow";
+import SupportModal from "../ui/SupportModal";
 import { radius, spacing } from "../../constants/theme";
 import { useAppTheme } from "../../constants/ThemeContext";
 import { getAuthErrorMessage, logout } from "../../services/authService";
+import { useAuth } from "../../hooks/useAuth";
+import ConfirmDialog from "../ui/ConfirmDialog";
+import AuthTextField from "../ui/AuthTextField";
+import { deleteOwnAccount, getAccountDeletionError } from "../../services/accountDeletionService";
 
 export default function SettingsScreen() {
   const { isDark, setIsDark, colors, typography } = useAppTheme();
@@ -17,9 +22,24 @@ export default function SettingsScreen() {
   const [offlineMode, setOfflineMode] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
+  const [supportModal, setSupportModal] = useState(null);
+  const { role } = useAuth();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [password, setPassword] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const submitting = useRef(false);
+  const handleDelete = async () => {
+    if (submitting.current || isSigningOut) return;
+    submitting.current = true; setDeleting(true); setDeleteError("");
+    const enteredPassword = password; setPassword("");
+    try { await deleteOwnAccount(enteredPassword); }
+    catch (error) { setDeleteError(getAccountDeletionError(error)); }
+    finally { submitting.current = false; setDeleting(false); }
+  };
 
   const handleSignOut = async () => {
-    if (isSigningOut) return;
+    if (isSigningOut || submitting.current) return;
 
     setSignOutError("");
     setIsSigningOut(true);
@@ -37,16 +57,11 @@ export default function SettingsScreen() {
       <AppHeader />
 
       <Text style={styles.sectionTitle}>Account</Text>
-      <View style={styles.card}>
+      <View style={styles.card} pointerEvents={deleting ? "none" : "auto"}>
         <SettingsRow
           icon="person-outline"
           label="Edit Profile"
           onPress={() => router.push("/edit-profile")}
-        />
-        <SettingsRow
-          icon="lock-closed-outline"
-          label="Change Password"
-          onPress={() => router.push("/change-password")}
         />
       </View>
 
@@ -82,12 +97,12 @@ export default function SettingsScreen() {
         <SettingsRow
           icon="help-circle-outline"
           label="Help Center"
-          onPress={() => {}}
+          onPress={() => setSupportModal("help")}
         />
         <SettingsRow
           icon="document-text-outline"
           label="Terms of Service"
-          onPress={() => {}}
+          onPress={() => setSupportModal("terms")}
         />
       </View>
 
@@ -95,7 +110,7 @@ export default function SettingsScreen() {
         style={[styles.signOutButton, isSigningOut && styles.buttonDisabled]}
         onPress={handleSignOut}
         activeOpacity={0.8}
-        disabled={isSigningOut}
+        disabled={isSigningOut || deleting}
       >
         <Ionicons name="log-out-outline" size={16} color="#D92D20" />
         <Text style={styles.signOutText}>
@@ -105,6 +120,21 @@ export default function SettingsScreen() {
       {signOutError ? (
         <Text style={styles.signOutError}>{signOutError}</Text>
       ) : null}
+      {role === "user" ? <TouchableOpacity accessibilityRole="button"
+        style={[styles.signOutButton, { marginTop: spacing.md }]}
+        disabled={isSigningOut || deleting} onPress={() => { setDeleteError(""); setConfirmDelete(true); }}>
+        <Text style={styles.signOutText}>Delete Account</Text>
+      </TouchableOpacity> : null}
+      <SupportModal kind={supportModal} onClose={() => setSupportModal(null)} />
+      <ConfirmDialog visible={confirmDelete} title="Delete your account?"
+        message="This will permanently delete your SpeakSharp account, presentations, recordings, and feedback. This action cannot be undone."
+        destructive loading={deleting} confirmLabel={deleting ? "Deleting your account..." : "Delete Account"}
+        onCancel={() => { if (!submitting.current) { setConfirmDelete(false); setPassword(""); setDeleteError(""); } }}
+        onConfirm={handleDelete}>
+        <AuthTextField label="Current password" accessibilityLabel="Current password" value={password} onChangeText={setPassword}
+          secureTextEntry editable={!deleting} textContentType="password" autoComplete="current-password" />
+        {deleteError ? <Text accessibilityRole="alert" style={styles.signOutError}>{deleteError}</Text> : null}
+      </ConfirmDialog>
     </ScreenContainer>
   );
 }

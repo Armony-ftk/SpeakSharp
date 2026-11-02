@@ -1,17 +1,25 @@
 import { ScrollView, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing } from '../../constants/theme';
 import { useAppTheme } from '../../constants/ThemeContext';
 
-export default function ScreenContainer({ children, contentStyle, floatingAction }) {
+export default function ScreenContainer({ children, contentStyle, floatingAction, admin = false, bottomInset = false }) {
   const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const styles = getStyles(colors);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={admin ? ['top', 'left', 'right'] : ['top']}>
       <ScrollView
-        contentContainerStyle={[styles.content, contentStyle]}
+        contentContainerStyle={[
+          styles.content,
+          admin && styles.adminContent,
+          bottomInset && { paddingBottom: spacing.xl + insets.bottom },
+          contentStyle,
+        ]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps={admin ? 'handled' : undefined}
+        keyboardDismissMode={admin ? 'on-drag' : undefined}
       >
         {children}
       </ScrollView>
@@ -29,6 +37,13 @@ function getStyles(colors) {
   content: {
     padding: spacing.lg,
     paddingBottom: spacing.xl,
+  },
+  adminContent: {
+    padding: spacing.md,
+    paddingBottom: spacing.lg,
+    width: '100%',
+    maxWidth: 760,
+    alignSelf: 'center',
   },
   });
 }
